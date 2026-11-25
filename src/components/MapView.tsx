@@ -30,6 +30,8 @@ const SOURCES = {
   esri: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
 };
 
+maplibregl.setWorkerUrl("/maplibre/maplibre-gl-worker.mjs");
+
 const EMPTY: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
 
 export default function MapView(props: Props) {

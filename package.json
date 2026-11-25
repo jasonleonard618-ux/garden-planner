@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "postinstall": "node scripts/copy-maplibre-worker.mjs"
   },
   "dependencies": {
     "@turf/turf": "^7.4.0",
@@ -16,7 +17,7 @@
     "next": "15.5.29",
     "react": "19.1.0",
     "react-dom": "19.1.0",
-    "suncalc": "^2.1.4"
+    "suncalc": "^1.9.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
