@@ -1,5 +1,5 @@
 {
-  "name": "gp-tmp",
+  "name": "garden-planner",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -9,17 +9,23 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@turf/turf": "^7.4.0",
+    "copc": "^0.0.9",
+    "geotiff": "^3.0.5",
+    "maplibre-gl": "^6.19.0",
+    "next": "15.5.29",
     "react": "19.1.0",
     "react-dom": "19.1.0",
-    "next": "15.5.29"
+    "suncalc": "^2.1.4"
   },
   "devDependencies": {
-    "typescript": "^5",
+    "@eslint/eslintrc": "^3",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/suncalc": "^1.9.2",
     "eslint": "^9",
     "eslint-config-next": "15.5.29",
-    "@eslint/eslintrc": "^3"
+    "typescript": "^5"
   }
 }
