@@ -10,7 +10,8 @@ import type { LngLat, SiteObject } from "@/lib/types";
 export type DrawMode = "idle" | "garden" | "structure" | "clear" | "tree";
 
 type Props = {
-  flyTo: { center: LngLat; zoom: number; key: number } | null;
+  flyTo: { center: LngLat; zoom: number; key: number; padLeft?: number; padBottom?: number } | null;
+  showSides?: boolean;
   imagery: "usgs" | "esri";
   garden: LngLat[] | null;
   objects: SiteObject[];
@@ -22,6 +23,7 @@ type Props = {
   onPoint: (p: LngLat) => void;
   draftRef: React.MutableRefObject<{ undo: () => void; finish: () => void; count: () => number } | null>;
   onDraftChange: (n: number) => void;
+  beds?: { n: number; ring: LngLat[]; center: LngLat; label: string; tone: "ok" | "low" | "walk" }[];
 };
 
 const SOURCES = {
@@ -41,6 +43,7 @@ export default function MapView(props: Props) {
   const draft = useRef<LngLat[]>([]);
   const labelMarkers = useRef<maplibregl.Marker[]>([]);
   const pin = useRef<maplibregl.Marker | null>(null);
+  const bedMarkers = useRef<maplibregl.Marker[]>([]);
   const latest = useRef(props);
   latest.current = props;
 
@@ -72,7 +75,7 @@ export default function MapView(props: Props) {
     m.on("load", () => {
       m.addSource("shade", { type: "image", url: transparentPng, coordinates: [[0, 0.001], [0.001, 0.001], [0.001, 0], [0, 0]] });
       m.addLayer({ id: "shade", type: "raster", source: "shade", paint: { "raster-opacity": 0.72, "raster-fade-duration": 0, "raster-resampling": "nearest" }, layout: { visibility: "none" } });
-      for (const id of ["garden", "objects", "draft"]) m.addSource(id, { type: "geojson", data: EMPTY });
+      for (const id of ["garden", "objects", "draft", "beds"]) m.addSource(id, { type: "geojson", data: EMPTY });
       m.addLayer({ id: "garden-fill", type: "fill", source: "garden", paint: { "fill-color": "#9fd18b", "fill-opacity": 0.18 } });
       m.addLayer({ id: "garden-line", type: "line", source: "garden", paint: { "line-color": "#f4f9ef", "line-width": 3 } });
       m.addLayer({ id: "garden-line-inner", type: "line", source: "garden", paint: { "line-color": "#3f7a3a", "line-width": 1.5, "line-dasharray": [2, 1.5] } });
@@ -87,6 +90,8 @@ export default function MapView(props: Props) {
         id: "objects-line", type: "line", source: "objects",
         paint: { "line-color": ["match", ["get", "kind"], "tree", "#d9f2c7", "clear", "#ffffff", "#ffd7c4"], "line-width": 2, "line-dasharray": [3, 2] },
       });
+      m.addLayer({ id: "beds-fill", type: "fill", source: "beds", paint: { "fill-color": ["match", ["get", "tone"], "low", "#FF6F47", "#BFE3D0"], "fill-opacity": 0.55 } });
+      m.addLayer({ id: "beds-line", type: "line", source: "beds", paint: { "line-color": "#0B3530", "line-width": 1.6 } });
       m.addLayer({ id: "draft-line", type: "line", source: "draft", filter: ["==", "$type", "LineString"], paint: { "line-color": "#ffe27a", "line-width": 2.5 } });
       m.addLayer({ id: "draft-pts", type: "circle", source: "draft", filter: ["==", "$type", "Point"], paint: { "circle-radius": 5, "circle-color": "#ffe27a", "circle-stroke-color": "#3b3b1a", "circle-stroke-width": 1.5 } });
       ready.current = true;
@@ -157,6 +162,25 @@ export default function MapView(props: Props) {
     syncGarden();
     syncObjects();
     syncOverlay();
+    syncBeds();
+  }
+
+  function syncBeds() {
+    const m = map.current;
+    if (!m || !ready.current) return;
+    bedMarkers.current.forEach((mk) => mk.remove());
+    bedMarkers.current = [];
+    const beds = props.beds ?? [];
+    (m.getSource("beds") as GeoJSONSource).setData({
+      type: "FeatureCollection",
+      features: beds.map((b) => ({ type: "Feature" as const, properties: { tone: b.tone }, geometry: { type: "Polygon" as const, coordinates: [closeRing(b.ring)] } })),
+    });
+    for (const b of beds) {
+      const div = document.createElement("div");
+      div.className = "bed-label";
+      div.textContent = b.label;
+      bedMarkers.current.push(new maplibregl.Marker({ element: div }).setLngLat(b.center).addTo(m));
+    }
   }
 
   function syncImagery() {
@@ -175,7 +199,7 @@ export default function MapView(props: Props) {
     (m.getSource("garden") as GeoJSONSource).setData(
       ring ? { type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: [closeRing(ring)] } } : EMPTY,
     );
-    if (!ring) return;
+    if (!ring || props.showSides === false) return;
     for (const s of measure(ring).sides) {
       const div = document.createElement("div");
       div.className = "side-label";
@@ -211,9 +235,10 @@ export default function MapView(props: Props) {
   }
 
   useEffect(syncImagery, [props.imagery]);  
-  useEffect(syncGarden, [props.garden]);  
+  useEffect(syncGarden, [props.garden, props.showSides]);  
   useEffect(syncObjects, [props.objects]);  
-  useEffect(syncOverlay, [props.overlay, props.overlayVisible]);  
+  useEffect(syncOverlay, [props.overlay, props.overlayVisible]);
+  useEffect(syncBeds, [props.beds]);  
 
   useEffect(() => {
     const m = map.current;
@@ -227,7 +252,7 @@ export default function MapView(props: Props) {
   }, [props.mode]);  
 
   useEffect(() => {
-    if (props.flyTo && map.current) map.current.flyTo({ center: props.flyTo.center, zoom: props.flyTo.zoom, speed: 1.6 });
+    if (props.flyTo && map.current) map.current.flyTo({ center: props.flyTo.center, zoom: props.flyTo.zoom, speed: 1.6, padding: { left: props.flyTo.padLeft ?? 0, top: 0, right: 0, bottom: props.flyTo.padBottom ?? 0 } });
   }, [props.flyTo]);
 
   useEffect(() => {

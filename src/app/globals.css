@@ -271,3 +271,46 @@ a.btn { text-decoration: none; display: inline-block; }
   .cards { grid-template-columns: 1fr; }
   .how { padding: 64px 18px; }
 }
+
+/* ---------- beds / plants / layout ---------- */
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { border: 1px solid var(--line); background: #fff; color: var(--teal); border-radius: 999px; padding: 5px 12px; font-size: 13px; font-weight: 500; cursor: pointer; }
+.chip.on { background: var(--teal); border-color: var(--teal); color: #fff; }
+.bedlist { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.bedlist li { display: grid; grid-template-columns: 26px 1fr 64px 104px; align-items: center; gap: 8px; font-size: 13px; }
+.bed-n { width: 24px; height: 24px; border-radius: 50%; background: var(--teal); color: #fff; display: grid; place-items: center; font-family: var(--mono); font-size: 11.5px; }
+.bed-bar { height: 8px; border-radius: 4px; background: rgba(11, 53, 48, 0.1); overflow: hidden; }
+.bed-bar i { display: block; height: 100%; border-radius: 4px; }
+.bed-h { font-family: var(--mono); font-size: 12px; text-align: right; }
+.bed-tag { color: var(--muted); font-size: 12px; }
+.bed-label { width: 22px; height: 22px; display: grid; place-items: center; background: rgba(11, 53, 48, 0.92); color: #fff; font-size: 11px; font-weight: 600; border-radius: 50%; pointer-events: none; font-family: var(--mono); box-shadow: 0 0 0 1.5px #fff; }
+
+.croplist { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.croplist li { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 6px 6px 6px 12px; }
+.croplist li.on { border-color: var(--teal-2); box-shadow: inset 3px 0 0 var(--coral); }
+.crop-row { display: flex; align-items: center; gap: 8px; }
+.crop-name { flex: 1; display: flex; align-items: center; justify-content: space-between; gap: 8px; border: 0; background: none; padding: 4px 0; cursor: pointer; text-align: left; font-size: 14px; color: var(--ink); }
+.fit { font-size: 11.5px; font-weight: 600; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+.fit-fits { background: var(--mint); color: var(--teal); }
+.fit-needs-sun { background: #FDE0D5; color: var(--coral-ink); }
+.fit-season-short { background: #FBE7C2; color: #6A4300; }
+.fit-fall, .fit-perennial { background: #E9ECEB; color: var(--muted); }
+.btn.add { padding: 6px 14px; font-size: 13px; }
+.btn.add.on { background: var(--teal); border-color: var(--teal); color: #fff; }
+.facts { border-top: 1px solid var(--line); margin: 6px 6px 4px 0; padding-top: 6px; font-size: 13px; display: grid; gap: 4px; }
+.facts p { margin: 0; }
+.label-pc { margin-left: 6px; font-size: 11px; color: var(--muted); border: 1px dashed rgba(11, 53, 48, 0.3); border-radius: 999px; padding: 1px 7px; white-space: nowrap; }
+.pair { background: var(--mint-soft); border-radius: 12px; padding: 8px 10px; margin: 0; }
+
+.bedgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.bedcard { margin: 0; background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 6px; }
+.bedcard figcaption { display: grid; font-size: 12.5px; margin-bottom: 6px; line-height: 1.25; }
+.bedcard figcaption span { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.bedcard svg { display: block; width: 62%; margin: 0 auto; }
+.bedkey { margin: 6px 0 0; display: grid; gap: 2px; font-size: 11.5px; }
+.bedkey div { display: grid; grid-template-columns: 14px 1fr; gap: 4px; align-items: baseline; }
+.bedkey div.low dd { color: var(--coral-ink); }
+.bedkey dt { font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
+.bedkey dd { margin: 0; line-height: 1.25; }
+.bedkey i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; vertical-align: 0; }
+@media (max-width: 760px) { .bedgrid { grid-template-columns: repeat(3, 1fr); } .bedlist li { grid-template-columns: 26px 1fr 60px; } .bed-tag { display: none; } }

@@ -36,6 +36,15 @@ export type SiteData = {
       organicMatter: number | null;
     }[];
   } | null;
+  frost?: {
+    lastSpring: string;
+    firstFall: string;
+    frostFreeDays: number;
+    station: string;
+    stationName: string;
+    distanceMiles: number;
+    source: string;
+  } | null;
   wind: {
     station: string;
     stationName: string;
@@ -74,6 +83,8 @@ export type SiteProfile = {
   garden: LngLat[] | null;
   objects: SiteObject[];
   imagery: "usgs" | "esri";
+  beds?: { widthFt: number; lengthFt: number; pathFt: number; walkways: number[] };
+  picks?: string[];
   summary: {
     areaSqFt?: number;
     perimeterFt?: number;

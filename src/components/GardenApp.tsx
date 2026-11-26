@@ -10,6 +10,9 @@ import type { LngLat, Place, Season, SiteData, SiteObject, SiteProfile, SunStats
 import type { DrawMode } from "./MapView";
 import WindRose from "./WindRose";
 import { Wordmark } from "./Logo";
+import { bedSun, DEFAULT_BEDS, fitBeds, type BedOptions } from "@/lib/beds";
+import { planBeds, type Square } from "@/lib/layout";
+import { CROPS, cropFit, KIND_LABEL, PAIRINGS, plantsPerSquare, SOURCES, SUN_PRACTICAL, type Crop, type FitTag, type Kind } from "@/data/crops";
 
 const MapView = dynamic(() => import("./MapView"), { ssr: false, loading: () => <div className="map map-loading" /> });
 
@@ -68,7 +71,7 @@ function pointInPoly(x: number, y: number, poly: [number, number][]) {
 export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
   // ---------- core state ----------
   const [place, setPlace] = useState<Place | null>(null);
-  const [flyTo, setFlyTo] = useState<{ center: LngLat; zoom: number; key: number } | null>(null);
+  const [flyTo, setFlyTo] = useState<{ center: LngLat; zoom: number; key: number; padLeft?: number; padBottom?: number } | null>(null);
   const [garden, setGarden] = useState<LngLat[] | null>(null);
   const [objects, setObjects] = useState<SiteObject[]>([]);
   const [imagery, setImagery] = useState<"usgs" | "esri">("usgs");
@@ -90,6 +93,9 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
   const [saved, setSaved] = useState<SiteProfile[]>([]);
   const [toast, setToast] = useState<string | null>(null);
   const [step, setStep] = useState(0);
+  const [bedOpts, setBedOpts] = useState<BedOptions>(DEFAULT_BEDS);
+  const [picks, setPicks] = useState<string[]>([]);
+  const [kindFilter, setKindFilter] = useState<Kind | "all">("all");
   const panelRef = useRef<HTMLElement>(null);
 
   const [treeForm, setTreeForm] = useState({ heightFt: 30, widthFt: 20, leaves: "deciduous" as "deciduous" | "evergreen" });
@@ -235,6 +241,43 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
     if (sunStats) setSunBySeason((s) => ({ ...s, [season]: sunStats }));
   }, [sunStats]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ---------- beds, plants, layout ----------
+  const fit = useMemo(() => (garden ? fitBeds(garden, bedOpts) : null), [garden, bedOpts]);
+  const allCols = useMemo(() => (garden ? fitBeds(garden, { ...bedOpts, walkways: [] }) : null), [garden, bedOpts]);
+  const bedSuns = useMemo(() => {
+    if (!fit || !sun || grid.state !== "done" || sun.key !== sunKey) return null;
+    return fit.beds.map((b) => bedSun(b, sun.hours, grid.data));
+  }, [fit, sun, grid, sunKey]);
+  const bedRows = useMemo(() => (fit ? fit.beds.map((b, i) => ({ n: b.n, sun: bedSuns?.[i] ?? null })) : []), [fit, bedSuns]);
+  const bestSun = bedSuns?.length ? Math.max(...bedSuns.map((h) => h ?? 0)) : sunStats?.avgHours ?? null;
+  const frost = site.state === "done" ? site.data.frost ?? null : null;
+  const plan = useMemo(() => planBeds(bedRows, picks), [bedRows, picks]);
+  // Frame the garden in the map area beside the panel when moving past step 1.
+  const framed = useRef<string>("");
+  useEffect(() => {
+    if (!garden || step < 1) return;
+    const key = JSON.stringify(garden);
+    if (framed.current === key) return;
+    framed.current = key;
+    const lat = ringCenter(garden)[1];
+    const xs = garden.map((p) => p[0]), ys = garden.map((p) => p[1]);
+    const wM = Math.max((Math.max(...xs) - Math.min(...xs)) * 111320 * Math.cos((lat * Math.PI) / 180), (Math.max(...ys) - Math.min(...ys)) * 110574, 5);
+    const phone = window.innerWidth <= 760;
+    const target = phone ? 200 : 360; // garden width on screen, px
+    const zoom = Math.max(17, Math.min(20, Math.log2((156543.03 * Math.cos((lat * Math.PI) / 180) * target) / wM)));
+    setFlyTo({ center: ringCenter(garden), zoom, key: Date.now(), padLeft: phone ? 0 : 440, padBottom: phone ? Math.round(window.innerHeight * 0.56) : 0 });
+  }, [garden, step]);
+
+  const mapBeds = useMemo(() => {
+    if (!fit || step < 2 || step > 5) return [];
+    return fit.beds.map((b, i) => {
+      const h = bedSuns?.[i];
+      const sq = plan.beds[i];
+      const low = h != null && (step >= 4 && sq ? sq.north.lowSun || sq.south.lowSun : h < 6);
+      return { n: b.n, ring: b.ring, center: b.center, label: `${b.n}`, tone: (low ? "low" : "ok") as "ok" | "low" };
+    });
+  }, [fit, bedSuns, plan, step]);
+
   // ---------- saving ----------
   const buildProfile = (): SiteProfile | null =>
     place && {
@@ -262,6 +305,8 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
     setProfileId(p.id);
     setProfileName(p.name);
     setImagery(p.imagery ?? "usgs");
+    setBedOpts(p.beds ?? DEFAULT_BEDS);
+    setPicks(p.picks ?? []);
     choosePlace(p.place, { garden: p.garden, objects: p.objects ?? [] });
     setStep(p.garden ? 1 : 0);
   };
@@ -308,13 +353,15 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
           garden={garden}
           objects={objects}
           overlay={overlay}
-          overlayVisible={overlayVisible && step >= 1}
+          overlayVisible={overlayVisible && (step === 1 || step === 2)}
           marker={place && !garden ? [place.lon, place.lat] : null}
           mode={mode}
           onRingComplete={onRingComplete}
           onPoint={onPoint}
           draftRef={draftRef}
           onDraftChange={setDraftCount}
+          beds={mapBeds}
+          showSides={step < 2}
         />
         <div className="map-ui top-right">
           <div className="seg glass">
@@ -322,7 +369,7 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
             <button className={imagery === "esri" ? "on" : ""} onClick={() => setImagery("esri")}>Esri satellite</button>
           </div>
         </div>
-        {overlay && overlayVisible && step >= 1 && (
+        {overlay && overlayVisible && (step === 1 || step === 2) && (
           <div className="map-ui bottom-right legend glass">
             <span>Direct sun, {SEASON_SHORT[season].toLowerCase()}</span>
             <div className="ramp" />
@@ -523,9 +570,17 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
           </>
         )}
 
-        {step >= 2 && step <= 5 && (
-          <ComingNext step={step} bedsFit={measured ? Math.floor(measured.areaSqFt / 32 / 2) : 0} />
+        {step === 2 && fit && (
+          <BedsStep
+            fit={fit} cols={allCols?.cols ?? 0} opts={bedOpts} setOpts={setBedOpts} suns={bedSuns}
+            season={SEASON_SHORT[season]} sunBusy={sunBusy || grid.state === "loading"}
+          />
         )}
+        {step === 3 && (
+          <PlantsStep picks={picks} setPicks={setPicks} bestSun={bestSun} frost={frost} kind={kindFilter} setKind={setKindFilter} bedSuns={bedSuns} />
+        )}
+        {step === 4 && <LayoutStep plan={plan} picks={picks} onPick={() => go(3)} />}
+        {step === 5 && <ComingNext step={step} bedsFit={fit?.beds.length ?? 0} />}
 
         {step === 6 && (
           <>
@@ -671,6 +726,220 @@ function ComingNext({ step, bedsFit }: { step: number; bedsFit: number }) {
       </ul>
       <p className="muted small">You can skip ahead and save your yard now. Your outline and sun study will carry over.</p>
     </>
+  );
+}
+
+// ---------- step 3: beds ----------
+
+function BedsStep({ fit, cols, opts, setOpts, suns, season, sunBusy }: {
+  fit: ReturnType<typeof fitBeds>; cols: number; opts: BedOptions; setOpts: (o: BedOptions) => void;
+  suns: (number | null)[] | null; season: string; sunBusy: boolean;
+}) {
+  const n = fit.beds.length;
+  const full = suns ? suns.filter((h) => h != null && h >= 6).length : null;
+  const toggleWalk = (c: number) => setOpts({ ...opts, walkways: opts.walkways.includes(c) ? opts.walkways.filter((x) => x !== c) : [...opts.walkways, c] });
+  return (
+    <>
+      <h1 className="title">Fit your raised beds</h1>
+      <p className="lede">4 × 8 ft beds, long side running north to south so they shade each other less, with paths between them.</p>
+      {n === 0 ? (
+        <p className="warn">No 4 × 8 ft bed fits inside this outline with {opts.pathFt} ft paths. Try narrower paths or redraw a larger area.</p>
+      ) : (
+        <div className="stats">
+          <Stat label="Beds" value={`${n}`} />
+          <Stat label="Growing area" value={`${n * opts.widthFt * opts.lengthFt} sq ft`} />
+          <Stat label={`Full sun, ${season.toLowerCase()}`} value={full == null ? "…" : `${full} of ${n}`} />
+        </div>
+      )}
+      {sunBusy && <Busy text="Measuring sun on each bed…" />}
+      <h3>Path width</h3>
+      <div className="tabs" role="radiogroup" aria-label="Path width">
+        {[2, 3, 4].map((w) => (
+          <button key={w} role="radio" aria-checked={opts.pathFt === w} className={opts.pathFt === w ? "tab on" : "tab"} onClick={() => setOpts({ ...opts, pathFt: w, walkways: [] })}>
+            {w} ft{w === 3 ? " · wheelbarrow" : ""}
+          </button>
+        ))}
+      </div>
+      {cols > 1 && (
+        <>
+          <h3>Walkway</h3>
+          <p className="muted small">Turn a column of beds into a wide front-to-back path. Columns are counted from the west.</p>
+          <div className="chips">
+            {Array.from({ length: cols }, (_, c) => (
+              <button key={c} className={opts.walkways.includes(c) ? "chip on" : "chip"} aria-pressed={opts.walkways.includes(c)} onClick={() => toggleWalk(c)}>
+                Column {String.fromCharCode(65 + c)}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+      {suns && n > 0 && (
+        <>
+          <h3>Sun on each bed, {season.toLowerCase()}</h3>
+          <ul className="bedlist">
+            {fit.beds.map((b, i) => {
+              const h = suns[i];
+              return (
+                <li key={b.id}>
+                  <span className="bed-n">{b.n}</span>
+                  <span className="bed-bar"><i style={{ width: `${Math.min(100, ((h ?? 0) / 12) * 100)}%`, background: (h ?? 0) >= 6 ? "#F2B544" : (h ?? 0) >= 4 ? "#6FB08A" : "#46608F" }} /></span>
+                  <span className="bed-h">{h == null ? "–" : `${fmt(h, 1)} hrs`}</span>
+                  <span className="bed-tag">{h == null ? "" : h >= 6 ? "Fruiting crops" : h >= 3 ? "Greens, roots" : "Too shady"}</span>
+                </li>
+              );
+            })}
+          </ul>
+          <p className="small muted">Fruiting crops need 6+ hours of direct sun; leafy greens manage with 3 to 4. <Why href={SOURCES.isu.href} /></p>
+        </>
+      )}
+    </>
+  );
+}
+
+// ---------- step 4: plants ----------
+
+const FIT_LABEL: Record<FitTag, string> = { fits: "Fits", "needs-sun": "Needs more sun", "season-short": "Season too short", fall: "Plant in fall", perennial: "Comes back yearly" };
+
+function PlantsStep({ picks, setPicks, bestSun, frost, kind, setKind, bedSuns }: {
+  picks: string[]; setPicks: (p: string[]) => void; bestSun: number | null; frost: SiteData["frost"] | null;
+  kind: Kind | "all"; setKind: (k: Kind | "all") => void; bedSuns: (number | null)[] | null;
+}) {
+  const [open, setOpen] = useState<string | null>(null);
+  const kinds = Object.keys(KIND_LABEL) as Kind[];
+  const list = CROPS.filter((c) => kind === "all" || c.kind === kind);
+  const toggle = (id: string) => setPicks(picks.includes(id) ? picks.filter((x) => x !== id) : [...picks, id]);
+  const fmtMD = (md: string) => new Date(`2021-${md.replace("/", "-")}T12:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return (
+    <>
+      <h1 className="title">Choose what to grow</h1>
+      <p className="lede">Each crop is checked against the sun on your sunniest bed{frost ? " and your frost dates" : ""}. Tap a crop for the details.</p>
+      {frost ? (
+        <div className="stats">
+          <Stat label="Last spring frost" value={fmtMD(frost.lastSpring)} />
+          <Stat label="First fall frost" value={fmtMD(frost.firstFall)} />
+          <Stat label="Frost-free days" value={`${frost.frostFreeDays}`} />
+        </div>
+      ) : (
+        <p className="warn">We couldn&apos;t find frost dates near you, so season length isn&apos;t checked.</p>
+      )}
+      {frost && <p className="source">{frost.source}. {frost.stationName}, {fmt(frost.distanceMiles, 0)} mi away. Half of years have a frost after the spring date or before the fall one.</p>}
+      <div className="chips" role="group" aria-label="Filter by type">
+        <button className={kind === "all" ? "chip on" : "chip"} aria-pressed={kind === "all"} onClick={() => setKind("all")}>All</button>
+        {kinds.map((k) => <button key={k} className={kind === k ? "chip on" : "chip"} aria-pressed={kind === k} onClick={() => setKind(k)}>{KIND_LABEL[k]}</button>)}
+      </div>
+      <ul className="croplist">
+        {list.map((c) => {
+          const tag = cropFit(c, bestSun, frost?.frostFreeDays ?? null);
+          const on = picks.includes(c.id);
+          const bedsOk = bedSuns ? bedSuns.filter((h) => (h ?? 0) >= c.sun).length : null;
+          return (
+            <li key={c.id} className={on ? "on" : ""}>
+              <div className="crop-row">
+                <button className="crop-name" onClick={() => setOpen(open === c.id ? null : c.id)} aria-expanded={open === c.id}>
+                  <strong>{c.name}</strong>
+                  <span className={`fit fit-${tag}`}>{tag === "fits" ? "✓ " : tag === "needs-sun" || tag === "season-short" ? "! " : ""}{FIT_LABEL[tag]}</span>
+                </button>
+                <button className={on ? "btn add on" : "btn add"} onClick={() => toggle(c.id)} aria-pressed={on} aria-label={`${on ? "Remove" : "Add"} ${c.name}`}>{on ? "Added" : "Add"}</button>
+              </div>
+              {open === c.id && <CropFacts c={c} bedsOk={bedsOk} beds={bedSuns?.length ?? 0} frost={frost} />}
+            </li>
+          );
+        })}
+      </ul>
+      <p className="muted small">{picks.length ? `${picks.length} crop${picks.length > 1 ? "s" : ""} picked.` : "Pick a few crops, then see them laid out in your beds."}</p>
+    </>
+  );
+}
+
+function CropFacts({ c, bedsOk, beds, frost }: { c: Crop; bedsOk: number | null; beds: number; frost: SiteData["frost"] | null }) {
+  const pair = PAIRINGS.find((p) => p.a === c.id || p.b === c.id);
+  const partner = pair && CROPS.find((x) => x.id === (pair.a === c.id ? pair.b : pair.a));
+  return (
+    <div className="facts">
+      <p><b>Sun:</b> {c.sun === 6 ? "6+ hours" : c.sun === 4 ? "about 4+ hours (part shade is OK)" : "3 to 4 hours is enough"}
+        {bedsOk != null && beds > 0 && <> · fits {bedsOk} of your {beds} beds</>}
+        {SUN_PRACTICAL.has(c.id) ? <span className="label-pc">practical choice</span> : <> <Why href={SOURCES.isu.href} /></>}</p>
+      <p><b>Spacing:</b> {c.spacing[0]} in{c.spacing[1] !== c.spacing[0] ? ` × ${c.spacing[1]} in` : " apart"} · about {plantsPerSquare(c)} per 4 × 4 ft square
+        {c.spacingSource === "csu" ? <> <Why href={SOURCES.csu.href} /></> : <span className="label-pc">practical choice</span>}</p>
+      <p><b>Harvest:</b> {c.perennial ? "the year after planting" : c.start === "fall" ? "next summer" : `about ${c.days} days ${c.start === "transplant" ? "after planting out" : "after sowing"}`}<span className="label-pc">packet guidance</span></p>
+      <p><b>Goes in:</b> {c.warm ? `after your last frost${frost ? ` (${frost.lastSpring})` : ""}; it can't take frost` : c.start === "fall" ? "in fall" : "early, as a cool-season crop"}{c.start === "transplant" ? ", as plants" : c.start === "sets" ? ", from sets" : c.start === "seed" ? ", sown as seed" : ""}.</p>
+      {c.note && <p>{c.note}</p>}
+      {pair && partner && <p className="pair"><b>Pairs with {partner.name.toLowerCase()}:</b> {pair.claim} <a className="why" href={pair.source.href} target="_blank" rel="noreferrer">Why?</a></p>}
+    </div>
+  );
+}
+
+// ---------- step 5: layout ----------
+
+function LayoutStep({ plan, picks, onPick }: { plan: ReturnType<typeof planBeds>; picks: string[]; onPick: () => void }) {
+  if (!picks.length) {
+    return (
+      <>
+        <h1 className="title">Lay out each bed</h1>
+        <p className="lede">Pick some crops first and they&apos;ll be placed bed by bed, sun lovers in the sunniest spots.</p>
+        <button className="btn primary" onClick={onPick}>Choose crops</button>
+      </>
+    );
+  }
+  const low = plan.beds.flatMap((b) => [b.north, b.south]).filter((s) => s.crop && s.lowSun);
+  const open = plan.beds.flatMap((b) => [b.north, b.south]).filter((s) => !s.crop).length;
+  return (
+    <>
+      <h1 className="title">Lay out each bed</h1>
+      <p className="lede">Each bed is split into a north and a south 4 × 4 ft square. Tall crops sit on the north end so they don&apos;t shade the rest.</p>
+      <div className="bedgrid">
+        {plan.beds.map((b) => (
+          <figure key={b.n} className="bedcard">
+            <figcaption><b>Bed {b.n}</b><span>{b.sun == null ? "" : `${fmt(b.sun, 1)} hrs sun`}</span></figcaption>
+            <BedSvg north={b.north} south={b.south} />
+            <dl className="bedkey">
+              {([["N", b.north], ["S", b.south]] as const).map(([k, sq]) => (
+                <div key={k} className={sq.lowSun ? "low" : ""}>
+                  <dt>{k}</dt>
+                  <dd>{sq.crop ? <><i style={{ background: dotColor(sq.crop.id) }} />{sq.crop.name.split(" /")[0].replace(" (flower)", "")} ×{sq.plants}</> : <span className="muted">open</span>}</dd>
+                </div>
+              ))}
+            </dl>
+          </figure>
+        ))}
+      </div>
+      <p className="muted small">N is up. Dots show plant positions at Extension spacing.</p>
+      {plan.pairs.map((p) => (
+        <p key={p.a} className="pair small"><b>Backed by trials:</b> {p.claim} <a className="why" href={p.source.href} target="_blank" rel="noreferrer">Why?</a></p>
+      ))}
+      {low.length > 0 && <p className="warn">{low.map((s) => `${s.crop!.name} in bed ${s.bed}`).join(", ")} {low.length > 1 ? "get" : "gets"} less sun than {low.length > 1 ? "they need" : "it needs"}. Expect a smaller harvest, or swap for greens.</p>}
+      {plan.unplaced.length > 0 && <p className="warn">No room left for {plan.unplaced.map((c) => c.name.toLowerCase()).join(", ")}. Remove a walkway or pick fewer crops.</p>}
+      {open > 0 && <p className="muted small">{open} square{open > 1 ? "s are" : " is"} still open. <button className="link" onClick={onPick}>Add more crops</button></p>}
+    </>
+  );
+}
+
+const DOT = ["#FF6F47", "#145049", "#F2B544", "#6FB08A", "#B8401F", "#7A9E3B", "#4F7CAC", "#C98A2B"];
+const dotColor = (id: string) => DOT[CROPS.findIndex((c) => c.id === id) % DOT.length];
+
+function BedSvg({ north, south }: { north: Square; south: Square }) {
+  const half = (s: Square, y0: number) => {
+    if (!s.crop) return null;
+    const [a, b] = s.crop.spacing;
+    const nx = Math.max(1, Math.floor(48 / a)), ny = Math.max(1, Math.floor(48 / b));
+    const showX = Math.min(nx, 8), showY = Math.min(ny, 8);
+    const color = dotColor(s.crop.id);
+    const r = Math.max(1.2, Math.min(5, 20 / Math.max(showX, showY)));
+    return (
+      <>
+        {Array.from({ length: showX * showY }, (_, i) => (
+          <circle key={i} cx={(48 / showX) * ((i % showX) + 0.5)} cy={y0 + (48 / showY) * (Math.floor(i / showX) + 0.5)} r={r} fill={color} opacity={s.lowSun ? 0.45 : 0.9} />
+        ))}
+      </>
+    );
+  };
+  return (
+    <svg viewBox="-1 -1 50 98" width="100%" role="img" aria-label={`North: ${north.crop?.name ?? "open"}. South: ${south.crop?.name ?? "open"}.`}>
+      <rect x="0" y="0" width="48" height="96" rx="2" fill="#F4EFE6" stroke="#0B3530" strokeWidth="1" />
+      <line x1="0" y1="48" x2="48" y2="48" stroke="#0B3530" strokeWidth="0.5" strokeDasharray="2 1.5" />
+      {half(north, 0)}
+      {half(south, 48)}
+    </svg>
   );
 }
 

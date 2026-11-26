@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { frostAt } from "@/lib/server/frost";
 import { hardinessZone, reverseLookup, soilAt, windAt } from "@/lib/server/sources";
 
 export const maxDuration = 60;
@@ -25,5 +26,5 @@ export async function GET(req: NextRequest) {
     settle(soilAt(lat, lon)),
     where.state ? settle(windAt(lat, lon, where.state)) : null,
   ]);
-  return NextResponse.json({ ...where, zone, soil, wind }, { headers: { "Cache-Control": "public, s-maxage=2592000" } });
+  return NextResponse.json({ ...where, zone, soil, wind, frost: frostAt(lat, lon) }, { headers: { "Cache-Control": "public, s-maxage=2592000" } });
 }
