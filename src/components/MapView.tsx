@@ -65,6 +65,8 @@ type Props = {
   square?: boolean;
   /** When set, shows draggable corner handles and a move handle for this outline. */
   editRing?: LngLat[] | null;
+  /** Suggested sunnier spots: dashed outlines with a letter. */
+  spots?: { id: string; ring: LngLat[]; center: LngLat; label: string }[];
   onEditRing?: (ring: LngLat[]) => void;
   onDraftChange: (n: number) => void;
   beds?: { n: number; ring: LngLat[]; center: LngLat; label: string; tone: "ok" | "low" | "walk" }[];
@@ -119,7 +121,7 @@ export default function MapView(props: Props) {
     m.on("load", () => {
       m.addSource("shade", { type: "image", url: transparentPng, coordinates: [[0, 0.001], [0.001, 0.001], [0.001, 0], [0, 0]] });
       m.addLayer({ id: "shade", type: "raster", source: "shade", paint: { "raster-opacity": 0.72, "raster-fade-duration": 0, "raster-resampling": "nearest" }, layout: { visibility: "none" } });
-      for (const id of ["garden", "objects", "draft", "beds"]) m.addSource(id, { type: "geojson", data: EMPTY });
+      for (const id of ["garden", "objects", "draft", "beds", "spots"]) m.addSource(id, { type: "geojson", data: EMPTY });
       m.addLayer({ id: "garden-fill", type: "fill", source: "garden", paint: { "fill-color": "#9fd18b", "fill-opacity": 0.18 } });
       m.addLayer({ id: "garden-line", type: "line", source: "garden", paint: { "line-color": "#f4f9ef", "line-width": 3 } });
       m.addLayer({ id: "garden-line-inner", type: "line", source: "garden", paint: { "line-color": "#3f7a3a", "line-width": 1.5, "line-dasharray": [2, 1.5] } });
@@ -134,6 +136,8 @@ export default function MapView(props: Props) {
         id: "objects-line", type: "line", source: "objects",
         paint: { "line-color": ["match", ["get", "kind"], "tree", "#d9f2c7", "clear", "#ffffff", "#ffd7c4"], "line-width": 2, "line-dasharray": [3, 2] },
       });
+      m.addLayer({ id: "spots-fill", type: "fill", source: "spots", paint: { "fill-color": "#FF6F47", "fill-opacity": 0.12 } });
+      m.addLayer({ id: "spots-line", type: "line", source: "spots", paint: { "line-color": "#FF6F47", "line-width": 2.5, "line-dasharray": [2, 1.5] } });
       m.addLayer({ id: "beds-fill", type: "fill", source: "beds", paint: { "fill-color": ["match", ["get", "tone"], "low", "#FF6F47", "#BFE3D0"], "fill-opacity": 0.55 } });
       m.addLayer({ id: "beds-line", type: "line", source: "beds", paint: { "line-color": "#0B3530", "line-width": 1.6 } });
       m.addLayer({ id: "draft-line", type: "line", source: "draft", filter: ["==", "$type", "LineString"], paint: { "line-color": "#ffe27a", "line-width": 2.5 } });
@@ -215,6 +219,26 @@ export default function MapView(props: Props) {
     syncObjects();
     syncOverlay();
     syncBeds();
+    syncSpots();
+  }
+
+  const spotMarkers = useRef<maplibregl.Marker[]>([]);
+  function syncSpots() {
+    const m = map.current;
+    if (!m || !ready.current) return;
+    spotMarkers.current.forEach((mk) => mk.remove());
+    spotMarkers.current = [];
+    const spots = props.spots ?? [];
+    (m.getSource("spots") as GeoJSONSource).setData({
+      type: "FeatureCollection",
+      features: spots.map((s) => ({ type: "Feature" as const, properties: {}, geometry: { type: "Polygon" as const, coordinates: [closeRing(s.ring)] } })),
+    });
+    for (const s of spots) {
+      const div = document.createElement("div");
+      div.className = "spot-label";
+      div.textContent = s.label;
+      spotMarkers.current.push(new maplibregl.Marker({ element: div }).setLngLat(s.center).addTo(m));
+    }
   }
 
   function syncBeds() {
@@ -290,7 +314,8 @@ export default function MapView(props: Props) {
   useEffect(syncGarden, [props.garden, props.showSides]);  
   useEffect(syncObjects, [props.objects]);  
   useEffect(syncOverlay, [props.overlay, props.overlayVisible]);
-  useEffect(syncBeds, [props.beds]);  
+  useEffect(syncBeds, [props.beds]);
+  useEffect(syncSpots, [props.spots]);  
 
   useEffect(() => {
     const m = map.current;

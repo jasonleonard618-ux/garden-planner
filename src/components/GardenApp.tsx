@@ -14,6 +14,7 @@ import { Checklist, Problems, Timeline, type ToolView } from "./GrowTools";
 import { BuildPlanSheets, BuildStep, type BuildChoices } from "./BuildPlan";
 import { Feedback, listAccountPlans, saveToAccount, SignIn, useSession } from "./Account";
 import { supabase, track } from "@/lib/supabase";
+import { sunnierSpots } from "@/lib/bestspot";
 import { bedSun, DEFAULT_BEDS, fitBeds, type BedFit, type BedOptions } from "@/lib/beds";
 import { planBeds, type Square } from "@/lib/layout";
 import { CROPS, cropFit, KIND_LABEL, PAIRINGS, plantsPerSquare, SOURCES, SUN_PRACTICAL, type Crop, type FitTag, type Kind } from "@/data/crops";
@@ -259,6 +260,15 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
     if (sunStats) setSunBySeason((s) => ({ ...s, [season]: sunStats }));
   }, [sunStats]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ---------- sunnier spots nearby (sun step) ----------
+  const spotResult = useMemo(() => {
+    if (step !== 1 || !sun || !garden || grid.state !== "done" || sun.key !== sunKey || !place || !sunStats) return null;
+    // Already mostly full sun: nothing worth moving for.
+    if (sunStats.full >= 80) return { current: sunStats.avgHours, spots: [], fullSun: true };
+    return { ...sunnierSpots(grid.data, objects, place.lat, place.lon, sun.hours, garden, { radiusM: 20, max: 3 }) ?? { current: sunStats.avgHours, spots: [] }, fullSun: false };
+  }, [step, sun, garden, grid, sunKey, objects, place, sunStats]);
+  const mapSpots = useMemo(() => (editing || !spotResult ? [] : spotResult.spots.map((s) => ({ ...s, label: `${s.id} · ${fmt(s.avg, 1)} hrs` }))), [spotResult, editing]);
+
   // ---------- beds, plants, layout ----------
   const fit = useMemo(() => (garden ? fitBeds(garden, bedOpts) : null), [garden, bedOpts]);
   const allCols = useMemo(() => (garden ? fitBeds(garden, { ...bedOpts, walkways: [] }) : null), [garden, bedOpts]);
@@ -274,17 +284,20 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
   const framed = useRef<string>("");
   useEffect(() => {
     if (!garden || step < 1) return;
-    const key = JSON.stringify(garden);
+    const key = JSON.stringify([garden, mapSpots.map((m) => m.id + m.center.join())]);
     if (framed.current === key) return;
     framed.current = key;
+    // Include any suggested spots so they're on screen too.
+    const pts = [...garden, ...mapSpots.flatMap((m) => m.ring)];
     const lat = ringCenter(garden)[1];
-    const xs = garden.map((p) => p[0]), ys = garden.map((p) => p[1]);
+    const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
     const wM = Math.max((Math.max(...xs) - Math.min(...xs)) * 111320 * Math.cos((lat * Math.PI) / 180), (Math.max(...ys) - Math.min(...ys)) * 110574, 5);
     const phone = window.innerWidth <= 760;
-    const target = phone ? 200 : 360; // garden width on screen, px
+    const target = mapSpots.length ? (phone ? 300 : 620) : phone ? 200 : 360; // width on screen, px
     const zoom = Math.max(17, Math.min(20, Math.log2((156543.03 * Math.cos((lat * Math.PI) / 180) * target) / wM)));
-    setFlyTo({ center: ringCenter(garden), zoom, key: Date.now(), padLeft: phone ? 0 : 440, padBottom: phone ? Math.round(window.innerHeight * 0.56) : 0 });
-  }, [garden, step]);
+    const center: LngLat = [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2];
+    setFlyTo({ center: mapSpots.length ? center : ringCenter(garden), zoom, key: Date.now(), padLeft: phone ? 0 : 440, padBottom: phone ? Math.round(window.innerHeight * 0.56) : 0 });
+  }, [garden, step, mapSpots]);
 
   const mapBeds = useMemo(() => {
     if (!fit || step < 2 || step > 5) return [];
@@ -353,7 +366,7 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
   const mainSoil = s?.soil?.components.find((c) => c.texture) ?? s?.soil?.components[0];
 
   const reached = [true, !!garden, !!garden, !!garden, !!garden, !!garden, !!place];
-  const go = (i: number) => { if (reached[i]) { setView(null); setStep(i); setMode("idle"); panelRef.current?.scrollTo({ top: 0 }); } };
+  const go = (i: number) => { if (reached[i]) { setView(null); setStep(i); setMode("idle"); setEditing(false); panelRef.current?.scrollTo({ top: 0 }); } };
   const nextOk = step < STEPS.length - 1 && reached[step + 1];
 
   return (
@@ -409,10 +422,11 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
           onDraftChange={setDraftCount}
           shape={shape}
           square={square}
-          editRing={editing && step === 0 ? garden : null}
+          editRing={editing && step <= 1 ? garden : null}
+          spots={mapSpots}
           onEditRing={(r) => { setGarden(r); setSunBySeason({}); }}
           beds={mapBeds}
-          showSides={step < 2}
+          showSides={step < 1 || (step === 1 && !mapSpots.length)}
         />
         <div className="map-ui top-right">
           <div className="seg glass">
@@ -442,7 +456,7 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
             <button className="btn ghost" onClick={() => setMode("idle")}>Cancel</button>
           </div>
         )}
-        {editing && step === 0 && (
+        {editing && step <= 1 && (
           <div className="map-ui draw-bar glass" role="toolbar" aria-label="Adjust outline">
             <span className="small">Drag a corner, or drag ✥ to move the whole outline.</span>
             <button className="btn primary" onClick={() => setEditing(false)}>Done</button>
@@ -562,6 +576,31 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
               <label className="check">
                 <input type="checkbox" checked={overlayVisible} onChange={(e) => setOverlayVisible(e.target.checked)} /> Show sun map
               </label>
+            )}
+            {garden && (
+              <div className="row">
+                <button className={editing ? "btn primary" : "btn"} onClick={() => setEditing((e) => !e)}>{editing ? "Done adjusting" : "Move or adjust the outline"}</button>
+              </div>
+            )}
+            {spotResult && !editing && (
+              spotResult.spots.length > 0 ? (
+                <section className="spots">
+                  <h3>Sunnier spots nearby</h3>
+                  <p className="muted small">The same shape, shifted a short way onto open ground (no buildings or trees), gets more sun here. Your outline now: {fmt(spotResult.current, 1)} hrs.</p>
+                  <ul>
+                    {spotResult.spots.map((sp) => (
+                      <li key={sp.id}>
+                        <span className="spot-id">{sp.id}</span>
+                        <span><b>{fmt(sp.avg, 1)} hrs</b> <span className="muted small">(+{fmt(sp.gain, 1)}) · {Math.round(sp.metres * 3.28084)} ft {sp.dir}</span></span>
+                        <button className="btn" onClick={() => { setGarden(sp.ring); setSunBySeason({}); }}>Move here</button>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="muted small">Check it&apos;s inside your yard and not a driveway, patio or septic field. The photo can&apos;t tell lawn from pavement or show property lines.</p>
+                </section>
+              ) : (
+                <p className="muted small">{spotResult.fullSun ? "Your outline already gets full sun, so there's no need to move it." : "No sunnier open spot nearby: your outline is already in one of the sunniest clear areas around."}</p>
+              )
             )}
 
             <details className="sub">
