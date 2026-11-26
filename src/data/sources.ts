@@ -1,5 +1,6 @@
 /** Every source the app cites, with a link people can check. */
 export const SRC = {
+  muSize: { label: "University of Missouri Extension G6201: Vegetable planting calendar, Table 1 (reviewed 2016)", href: "https://extension.missouri.edu/publications/g6201" },
   isu: { label: "Iowa State Extension: vegetables in partial shade", href: "https://yardandgarden.extension.iastate.edu/faq/which-vegetables-will-grow-partial-shade" },
   isuCover: { label: "Iowa State Extension: cover crops for home gardens", href: "https://yardandgarden.extension.iastate.edu/how-to/types-cover-crops-use-home-vegetable-gardens" },
   isuCoverEnd: { label: "Iowa State Extension: ending cover crops", href: "https://yardandgarden.extension.iastate.edu/how-to/how-terminate-cover-crops-vegetable-garden" },

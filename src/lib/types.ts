@@ -86,6 +86,7 @@ export type SiteProfile = {
   beds?: { widthFt: number; lengthFt: number; pathFt: number; walkways: number[] };
   picks?: string[];
   build?: { bed: string; fence: string; drip: boolean };
+  goals?: { people: number; use: "fresh" | "preserve"; beds: number | null; fill: boolean };
   summary: {
     areaSqFt?: number;
     perimeterFt?: number;

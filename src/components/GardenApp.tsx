@@ -13,6 +13,8 @@ import { Wordmark } from "./Logo";
 import { Checklist, LocalNotes, Problems, Timeline, type ToolView } from "./GrowTools";
 import { guideFor, type RegionGuide } from "@/data/regions";
 import { BuildPlanSheets, BuildStep, type BuildChoices } from "./BuildPlan";
+import { DEFAULT_GOALS, GoalsStep, type Goals } from "./GoalsStep";
+import { sizeGarden } from "@/lib/sizing";
 import { Feedback, listAccountPlans, saveToAccount, SignIn, useSession } from "./Account";
 import { supabase, track } from "@/lib/supabase";
 import { sunnierSpots } from "@/lib/bestspot";
@@ -26,7 +28,7 @@ type Grid = SurfaceGrid & { fromLidar: boolean };
 type Load<T> = { state: "idle" } | { state: "loading" } | { state: "error"; message: string } | { state: "done"; data: T };
 
 const TOOL_LABEL: Record<ToolView, string> = { timeline: "Seed to harvest", problems: "What's wrong?", checklist: "Season checklist" };
-const STEPS = ["Address", "Sun", "Beds", "Plants", "Layout", "Build", "Save"];
+const STEPS = ["Address", "Sun", "Goals", "Beds", "Plants", "Layout", "Build", "Save"];
 const SEASONS: Season[] = ["spring", "summer", "fall"];
 const SEASON_SHORT: Record<Season, string> = { spring: "Spring", summer: "Summer", fall: "Late summer" };
 const YEAR = new Date().getFullYear() + (new Date().getMonth() > 8 ? 1 : 0);
@@ -106,6 +108,7 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
   const [step, setStep] = useState(0);
   const [bedOpts, setBedOpts] = useState<BedOptions>(DEFAULT_BEDS);
   const [picks, setPicks] = useState<string[]>([]);
+  const [goals, setGoals] = useState<Goals>(DEFAULT_GOALS);
   const [view, setView] = useState<ToolView | null>(null);
   const [build, setBuild] = useState<BuildChoices>({ bed: "better", fence: "better", drip: true });
   const [sheets, setSheets] = useState(false);
@@ -271,12 +274,23 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
   const mapSpots = useMemo(() => (editing || !spotResult ? [] : spotResult.spots.map((s) => ({ ...s, label: `${s.id} · ${fmt(s.avg, 1)} hrs` }))), [spotResult, editing]);
 
   // ---------- beds, plants, layout ----------
-  const fit = useMemo(() => (garden ? fitBeds(garden, bedOpts) : null), [garden, bedOpts]);
+  const fitAll = useMemo(() => (garden ? fitBeds(garden, bedOpts) : null), [garden, bedOpts]);
   const allCols = useMemo(() => (garden ? fitBeds(garden, { ...bedOpts, walkways: [] }) : null), [garden, bedOpts]);
-  const bedSuns = useMemo(() => {
-    if (!fit || !sun || grid.state !== "done" || sun.key !== sunKey) return null;
-    return fit.beds.map((b) => bedSun(b, sun.hours, grid.data));
-  }, [fit, sun, grid, sunKey]);
+  const allSuns = useMemo(() => {
+    if (!fitAll || !sun || grid.state !== "done" || sun.key !== sunKey) return null;
+    return fitAll.beds.map((b) => bedSun(b, sun.hours, grid.data));
+  }, [fitAll, sun, grid, sunKey]);
+  // How much garden the household needs (step 3), and the sunniest beds that cover it.
+  const size = useMemo(() => sizeGarden(picks, goals.people, goals.use), [picks, goals.people, goals.use]);
+  const wantBeds = goals.fill || !picks.length ? Infinity : goals.beds ?? size.recommended;
+  const { fit, bedSuns } = useMemo(() => {
+    if (!fitAll || wantBeds >= fitAll.beds.length) return { fit: fitAll, bedSuns: allSuns };
+    const keep = pickBeds(fitAll.beds, allSuns, wantBeds);
+    return {
+      fit: { ...fitAll, beds: keep.map((i, k) => ({ ...fitAll.beds[i], n: k + 1 })) },
+      bedSuns: allSuns ? keep.map((i) => allSuns[i]) : null,
+    };
+  }, [fitAll, allSuns, wantBeds]);
   const bedRows = useMemo(() => (fit ? fit.beds.map((b, i) => ({ n: b.n, sun: bedSuns?.[i] ?? null })) : []), [fit, bedSuns]);
   const bestSun = bedSuns?.length ? Math.max(...bedSuns.map((h) => h ?? 0)) : sunStats?.avgHours ?? null;
   const frost = site.state === "done" ? site.data.frost ?? null : null;
@@ -302,11 +316,11 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
   }, [garden, step, mapSpots]);
 
   const mapBeds = useMemo(() => {
-    if (!fit || step < 2 || step > 5) return [];
+    if (!fit || step < 2 || step > 6) return [];
     return fit.beds.map((b, i) => {
       const h = bedSuns?.[i];
       const sq = plan.beds[i];
-      const low = h != null && (step >= 4 && sq ? sq.north.lowSun || sq.south.lowSun : h < 6);
+      const low = h != null && (step >= 5 && sq ? sq.north.lowSun || sq.south.lowSun : h < 6);
       return { n: b.n, ring: b.ring, center: b.center, label: `${b.n}`, tone: (low ? "low" : "ok") as "ok" | "low" };
     });
   }, [fit, bedSuns, plan, step]);
@@ -318,6 +332,7 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
       name: profileName.trim() || place.label.split(",")[0],
       savedAt: new Date().toISOString(),
       place, garden, objects, imagery,
+      beds: bedOpts, picks, build, goals,
       summary: {
         areaSqFt: measured?.areaSqFt,
         perimeterFt: measured?.perimeterFt,
@@ -351,6 +366,7 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
     setImagery(p.imagery ?? "usgs");
     setBedOpts({ ...DEFAULT_BEDS, ...(p.beds ?? {}) });
     setPicks(p.picks ?? []);
+    setGoals({ ...DEFAULT_GOALS, ...(p.goals ?? {}) });
     if (p.build) setBuild(p.build as BuildChoices);
     choosePlace(p.place, { garden: p.garden, objects: p.objects ?? [] });
     setStep(p.garden ? 1 : 0);
@@ -367,7 +383,7 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
   const s = site.state === "done" ? site.data : null;
   const mainSoil = s?.soil?.components.find((c) => c.texture) ?? s?.soil?.components[0];
 
-  const reached = [true, !!garden, !!garden, !!garden, !!garden, !!garden, !!place];
+  const reached = [true, !!garden, !!garden, !!garden, !!garden, !!garden, !!garden, !!place];
   const go = (i: number) => { if (reached[i]) { setView(null); setStep(i); setMode("idle"); setEditing(false); panelRef.current?.scrollTo({ top: 0 }); } };
   const nextOk = step < STEPS.length - 1 && reached[step + 1];
 
@@ -415,7 +431,7 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
           garden={garden}
           objects={objects}
           overlay={overlay}
-          overlayVisible={overlayVisible && (step === 1 || step === 2)}
+          overlayVisible={overlayVisible && (step === 1 || step === 3)}
           marker={place && !garden ? [place.lon, place.lat] : null}
           mode={mode}
           onRingComplete={onRingComplete}
@@ -436,7 +452,7 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
             <button className={imagery === "esri" ? "on" : ""} onClick={() => setImagery("esri")}>Esri satellite</button>
           </div>
         </div>
-        {overlay && overlayVisible && (step === 1 || step === 2) && (
+        {overlay && overlayVisible && (step === 1 || step === 3) && (
           <div className="map-ui bottom-right legend glass">
             <span>Direct sun, {SEASON_SHORT[season].toLowerCase()}</span>
             <div className="ramp" />
@@ -474,7 +490,7 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
         {view ? (
           <>
             <p className="eyebrow">Grow tools · {TOOL_LABEL[view]}</p>
-            {view === "timeline" && <Timeline picks={picks} frost={frost} state={siteState} onPick={() => go(garden ? 3 : 0)} />}
+            {view === "timeline" && <Timeline picks={picks} frost={frost} state={siteState} onPick={() => go(garden ? 4 : 0)} />}
             {view === "problems" && <Problems />}
             {view === "checklist" && <Checklist frost={frost} />}
             <div className="stepnav">
@@ -706,19 +722,23 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
           </>
         )}
 
-        {step === 2 && fit && (
+        {step === 2 && fitAll && (
+          <GoalsStep goals={goals} setGoals={setGoals} picks={picks} setPicks={setPicks} size={size} fits={fitAll.beds.length} using={fit?.beds.length ?? 0} />
+        )}
+        {step === 3 && fit && fitAll && (
           <BedsStep
+            total={fitAll.beds.length} onGoals={() => go(2)}
             fit={fit} cols={allCols?.cols ?? 0} opts={bedOpts} setOpts={setBedOpts} suns={bedSuns}
             season={SEASON_SHORT[season]} sunBusy={sunBusy || grid.state === "loading"}
           />
         )}
-        {step === 3 && (
+        {step === 4 && (
           <PlantsStep picks={picks} setPicks={setPicks} bestSun={bestSun} frost={frost} kind={kindFilter} setKind={setKindFilter} bedSuns={bedSuns} state={siteState} />
         )}
-        {step === 4 && <LayoutStep plan={plan} picks={picks} onPick={() => go(3)} ends={fit?.ends ?? ["north", "south"]} />}
-        {step === 5 && garden && fit && <BuildStep garden={garden} beds={fit.beds} choices={build} setChoices={setBuild} onOpen={() => setSheets(true)} />}
+        {step === 5 && <LayoutStep plan={plan} picks={picks} onPick={() => go(4)} ends={fit?.ends ?? ["north", "south"]} />}
+        {step === 6 && garden && fit && <BuildStep garden={garden} beds={fit.beds} choices={build} setChoices={setBuild} onOpen={() => setSheets(true)} />}
 
-        {step === 6 && (
+        {step === 7 && (
           <>
             <h1 className="title">Save your plan</h1>
             <p className="lede">Give it a name so you can come back to it.</p>
@@ -854,7 +874,33 @@ function Why({ href }: { href: string }) {
   return <a className="why" href={href} target="_blank" rel="noreferrer">Why?</a>;
 }
 
-// ---------- step 3: beds ----------
+/**
+ * Choose n beds that sit together in the sun: start at the sunniest bed, then keep adding the bed
+ * with the best sun minus a distance penalty (¼ hr per foot from the group), so the garden stays
+ * one compact block instead of scattered beds (practical choice).
+ */
+function pickBeds(beds: BedFit["beds"], suns: (number | null)[] | null, n: number): number[] {
+  const lat = beds[0]?.center[1] ?? 0;
+  const ft = (a: LngLat, b: LngLat) => Math.hypot((a[0] - b[0]) * 365223 * Math.cos((lat * Math.PI) / 180), (a[1] - b[1]) * 362776);
+  const sunAt = (i: number) => suns?.[i] ?? 0;
+  let seed = 0;
+  beds.forEach((_, i) => { if (sunAt(i) > sunAt(seed)) seed = i; });
+  const keep = [seed];
+  const left = new Set(beds.map((_, i) => i).filter((i) => i !== seed));
+  while (keep.length < n && left.size) {
+    let best = -1, bestScore = -Infinity;
+    for (const i of left) {
+      const d = Math.min(...keep.map((k) => ft(beds[i].center, beds[k].center)));
+      const score = sunAt(i) - 0.25 * d;
+      if (score > bestScore) { bestScore = score; best = i; }
+    }
+    keep.push(best);
+    left.delete(best);
+  }
+  return keep.sort((a, b) => a - b);
+}
+
+// ---------- step 4: beds ----------
 
 const DIRS = [
   { id: "auto", label: "Best fit" },
@@ -864,7 +910,8 @@ const DIRS = [
 ] as const;
 const DIR_NAME = { ns: "north–south", outline: "the outline's direction", ew: "east–west" } as const;
 
-function BedsStep({ fit, cols, opts, setOpts, suns, season, sunBusy }: {
+function BedsStep({ total, onGoals, fit, cols, opts, setOpts, suns, season, sunBusy }: {
+  total: number; onGoals: () => void;
   fit: ReturnType<typeof fitBeds>; cols: number; opts: BedOptions; setOpts: (o: BedOptions) => void;
   suns: (number | null)[] | null; season: string; sunBusy: boolean;
 }) {
@@ -895,11 +942,12 @@ function BedsStep({ fit, cols, opts, setOpts, suns, season, sunBusy }: {
         <p className="warn">No 4 × 8 ft bed fits inside this outline with {opts.pathFt} ft paths. Try narrower paths or redraw a larger area.</p>
       ) : (
         <div className="stats">
-          <Stat label="Beds" value={`${n}`} />
+          <Stat label="Beds" value={n < total ? `${n} of ${total}` : `${n}`} />
           <Stat label="Growing area" value={`${n * opts.widthFt * opts.lengthFt} sq ft`} />
           <Stat label={`Full sun, ${season.toLowerCase()}`} value={full == null ? "…" : `${full} of ${n}`} />
         </div>
       )}
+      {n > 0 && n < total && <p className="muted small">Using {n} of the {total} beds that fit, grouped in the sunniest part of your outline, from your goals. The rest stays lawn for now. <button className="link" onClick={onGoals}>Change goals</button></p>}
       {sunBusy && <Busy text="Measuring sun on each bed…" />}
       <h3>Path width</h3>
       <div className="tabs" role="radiogroup" aria-label="Path width">
@@ -950,7 +998,7 @@ function BedsStep({ fit, cols, opts, setOpts, suns, season, sunBusy }: {
   );
 }
 
-// ---------- step 4: plants ----------
+// ---------- step 5: plants ----------
 
 const FIT_LABEL: Record<FitTag, string> = { fits: "Fits", "needs-sun": "Needs more sun", "season-short": "Season too short", fall: "Plant in fall", perennial: "Comes back yearly" };
 

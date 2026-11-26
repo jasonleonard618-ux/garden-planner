@@ -544,3 +544,25 @@ a.btn { text-decoration: none; display: inline-block; }
   .cd-fit { width: 10.2in; height: 6.8in; aspect-ratio: auto; margin: 0.3in auto 0; }
   .cd-inner { zoom: 0.544 !important; }
 }
+/* Goals step */
+.stepper { display: inline-flex; align-items: center; gap: 4px; background: rgba(11, 53, 48, 0.08); border-radius: 999px; padding: 4px; width: max-content; }
+.stepper button { width: 44px; height: 44px; border-radius: 50%; border: 0; background: #fff; color: var(--teal); font-size: 22px; line-height: 1; cursor: pointer; }
+.stepper button:disabled { opacity: 0.4; cursor: default; }
+.stepper-v { min-width: 56px; text-align: center; font-family: var(--serif); font-size: 32px; line-height: 44px; color: var(--teal); }
+.stepper.small button { width: 36px; height: 36px; font-size: 18px; }
+.stepper.small .stepper-v { min-width: 44px; font-size: 26px; line-height: 36px; }
+.use-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.use { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; padding: 12px 14px; border-radius: 16px; border: 1px solid var(--line); background: #fff; color: var(--teal); cursor: pointer; }
+.use small { color: var(--muted); font-size: 12px; }
+.use.on { background: var(--teal); border-color: var(--teal); color: #fff; }
+.use.on small { color: #D6E5E0; }
+.reco { background: #F4F1EA; border-radius: 20px; padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+.reco h3 { margin: 6px 0 0; }
+.reco-n { display: flex; align-items: baseline; gap: 12px; color: var(--teal); font-family: var(--serif); }
+.reco-n span:first-child { font-size: 84px; line-height: 0.85; }
+.reco-n span:last-child { font-size: 22px; line-height: 1.05; }
+.reco-n em { color: var(--muted); }
+.reco-bar { height: 8px; border-radius: 4px; background: #E3DED2; overflow: hidden; }
+.reco-bar i { display: block; height: 100%; border-radius: 4px; background: var(--coral, #FF6F47); }
+.reco-pick { align-items: center; gap: 14px; }
+.size-table td, .size-table th { font-size: 12.5px; }
