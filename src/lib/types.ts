@@ -85,6 +85,7 @@ export type SiteProfile = {
   imagery: "usgs" | "esri";
   beds?: { widthFt: number; lengthFt: number; pathFt: number; walkways: number[] };
   picks?: string[];
+  build?: { bed: string; fence: string; drip: boolean };
   summary: {
     areaSqFt?: number;
     perimeterFt?: number;

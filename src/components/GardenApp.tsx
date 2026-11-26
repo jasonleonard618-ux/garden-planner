@@ -11,6 +11,7 @@ import type { DrawMode } from "./MapView";
 import WindRose from "./WindRose";
 import { Wordmark } from "./Logo";
 import { Checklist, Problems, Timeline, type ToolView } from "./GrowTools";
+import { BuildPlanSheets, BuildStep, type BuildChoices } from "./BuildPlan";
 import { bedSun, DEFAULT_BEDS, fitBeds, type BedOptions } from "@/lib/beds";
 import { planBeds, type Square } from "@/lib/layout";
 import { CROPS, cropFit, KIND_LABEL, PAIRINGS, plantsPerSquare, SOURCES, SUN_PRACTICAL, type Crop, type FitTag, type Kind } from "@/data/crops";
@@ -98,6 +99,8 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
   const [bedOpts, setBedOpts] = useState<BedOptions>(DEFAULT_BEDS);
   const [picks, setPicks] = useState<string[]>([]);
   const [view, setView] = useState<ToolView | null>(null);
+  const [build, setBuild] = useState<BuildChoices>({ bed: "better", fence: "better", drip: true });
+  const [sheets, setSheets] = useState(false);
   const [menu, setMenu] = useState(false);
   const [kindFilter, setKindFilter] = useState<Kind | "all">("all");
   const panelRef = useRef<HTMLElement>(null);
@@ -309,8 +312,9 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
     setProfileId(p.id);
     setProfileName(p.name);
     setImagery(p.imagery ?? "usgs");
-    setBedOpts(p.beds ?? DEFAULT_BEDS);
+    setBedOpts({ ...DEFAULT_BEDS, ...(p.beds ?? {}) });
     setPicks(p.picks ?? []);
+    if (p.build) setBuild(p.build as BuildChoices);
     choosePlace(p.place, { garden: p.garden, objects: p.objects ?? [] });
     setStep(p.garden ? 1 : 0);
   };
@@ -606,7 +610,7 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
           <PlantsStep picks={picks} setPicks={setPicks} bestSun={bestSun} frost={frost} kind={kindFilter} setKind={setKindFilter} bedSuns={bedSuns} />
         )}
         {step === 4 && <LayoutStep plan={plan} picks={picks} onPick={() => go(3)} />}
-        {step === 5 && <ComingNext step={step} bedsFit={fit?.beds.length ?? 0} />}
+        {step === 5 && garden && fit && <BuildStep garden={garden} beds={fit.beds} choices={build} setChoices={setBuild} onOpen={() => setSheets(true)} />}
 
         {step === 6 && (
           <>
@@ -641,6 +645,9 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
         </div>
         </>)}
       </aside>
+      {sheets && garden && fit && (
+        <BuildPlanSheets name={profileName.trim() || place?.label.split(",")[0] || "My garden"} garden={garden} beds={fit.beds} plan={plan} choices={build} onClose={() => setSheets(false)} />
+      )}
     </div>
   );
 }
@@ -711,49 +718,6 @@ const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 function Why({ href }: { href: string }) {
   return <a className="why" href={href} target="_blank" rel="noreferrer">Why?</a>;
-}
-
-const COMING: Record<number, { title: string; body: string; bullets: string[] }> = {
-  2: {
-    title: "Fit your raised beds",
-    body: "Next, the app lays out 4 × 8 ft beds inside your outline, with paths wide enough for a wheelbarrow, and shows the sun hours for each bed.",
-    bullets: ["Beds run north to south so they shade each other less", "Each bed gets its own sun number", "Turn any column into a walkway"],
-  },
-  3: {
-    title: "Choose what to grow",
-    body: "A catalog of common vegetables, herbs and fruit, each checked against your sun, your frost dates and your season length.",
-    bullets: ["Tags like Fits, Needs more sun, Season too short", "Filter by what your family eats", "Every claim links to its Extension source"],
-  },
-  4: {
-    title: "Lay out each bed",
-    body: "Plants are placed bed by bed, with the sun lovers in your sunniest beds. Pairings are only called helpful when trials back them.",
-    bullets: ["Spacing from Extension guides", "Tall crops on the north side", "A seed-to-harvest timeline for your dates"],
-  },
-  5: {
-    title: "Preview the build",
-    body: "See what it takes to build: lumber, soil, a critter fence and drip watering, each in good, better and best options with rough costs.",
-    bullets: ["Cut list and shopping list", "Fence matched to the animals you have", "The full build plan comes with the paid plan"],
-  },
-};
-
-function ComingNext({ step, bedsFit }: { step: number; bedsFit: number }) {
-  const c = COMING[step];
-  return (
-    <>
-      <h1 className="title">{c.title}</h1>
-      <p className="badge">Coming in the next update</p>
-      <p className="lede">{c.body}</p>
-      {step === 2 && bedsFit > 0 && (
-        <div className="stats">
-          <Stat label="Beds that should fit, with paths" value={`About ${bedsFit}`} />
-        </div>
-      )}
-      <ul className="bullets">
-        {c.bullets.map((b) => <li key={b}>{b}</li>)}
-      </ul>
-      <p className="muted small">You can skip ahead and save your yard now. Your outline and sun study will carry over.</p>
-    </>
-  );
 }
 
 // ---------- step 3: beds ----------

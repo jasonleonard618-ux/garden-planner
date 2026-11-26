@@ -14,6 +14,8 @@ export const SRC = {
   umdInsects: { label: "UMD Extension: Vegetable problems caused by insects", href: "https://extension.umd.edu/resources/yard-garden/vegetables/vegetable-problems-caused-insects" },
   umdFall: { label: "UMD Extension: Cleaning up the vegetable garden in fall", href: "https://marylandgrows.umd.edu/2023/11/03/cleaning-up-the-vegetable-garden-in-fall/" },
   oregonTomato: { label: "Oregon State Extension: Tomato diseases", href: "https://extension.oregonstate.edu/news/understanding-tomato-diseases-helps-gardeners-grow-confidence" },
+  ugaFence: { label: "UGA Extension C1027-9: Garden fencing", href: "https://fieldreport.caes.uga.edu/publications/C1027-9/garden-fencing/" },
+  call811: { label: "Call 811 before you dig", href: "https://call811.com/" },
   noaa: { label: "NOAA U.S. Climate Normals 1991–2020", href: "https://www.ncei.noaa.gov/products/land-based-station/us-climate-normals" },
 } as const;
 

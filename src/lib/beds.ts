@@ -12,8 +12,9 @@ export type Bed = {
   center: LngLat;
 };
 
-export type BedOptions = { widthFt: number; lengthFt: number; pathFt: number; walkways: number[] };
-export const DEFAULT_BEDS: BedOptions = { widthFt: 4, lengthFt: 8, pathFt: 3, walkways: [] };
+export type BedOptions = { widthFt: number; lengthFt: number; pathFt: number; walkways: number[]; edgeFt?: number };
+// edgeFt keeps beds off the outline so there is room to walk and for a fence apron (practical choice).
+export const DEFAULT_BEDS: BedOptions = { widthFt: 4, lengthFt: 8, pathFt: 3, walkways: [], edgeFt: 1.5 };
 
 function pointInPoly(x: number, y: number, poly: [number, number][]) {
   let inside = false;
@@ -40,10 +41,10 @@ export function fitBeds(ring: LngLat[], o: BedOptions = DEFAULT_BEDS): { beds: B
   const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
   const w = o.widthFt * FT, l = o.lengthFt * FT, gap = o.pathFt * FT;
   const sx = w + gap, sy = l + gap;
-  const inside = (bx: number, by: number) => {
-    const m = 0.05; // 5 cm tolerance so beds can sit right on the outline
-    return [[bx + m, by + m], [bx + w - m, by + m], [bx + w - m, by + l - m], [bx + m, by + l - m]].every(([x, y]) => pointInPoly(x, y, local));
-  };
+  const e = (o.edgeFt ?? 1.5) * FT;
+  const inside = (bx: number, by: number) =>
+    [[bx - e, by - e], [bx + w + e, by - e], [bx + w + e, by + l + e], [bx - e, by + l + e], [bx + w / 2, by - e], [bx + w / 2, by + l + e], [bx - e, by + l / 2], [bx + w + e, by + l / 2]]
+      .every(([x, y]) => pointInPoly(x, y, local));
 
   let best: { cells: { c: number; r: number; x: number; y: number }[]; cols: number; rows: number } = { cells: [], cols: 0, rows: 0 };
   const steps = 8;
