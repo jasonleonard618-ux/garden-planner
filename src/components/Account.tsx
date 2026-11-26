@@ -41,7 +41,7 @@ export function SignIn() {
   return (
     <div className="signin">
       <p className="small"><b>Create a free account</b> to keep this plan and open it on your phone or computer. Everything you&apos;ve done so far comes with you.</p>
-      <button className="btn google" onClick={() => supabase!.auth.signInWithOAuth({ provider: "google", options: { redirectTo } })}>Continue with Google</button>
+      {process.env.NEXT_PUBLIC_GOOGLE_SIGNIN === "1" && <button className="btn google" onClick={() => supabase!.auth.signInWithOAuth({ provider: "google", options: { redirectTo } })}>Continue with Google</button>}
       {sent ? (
         <p className="small">Check your email for a sign-in link. You can close this tab after you click it.</p>
       ) : (
