@@ -10,6 +10,7 @@ import type { LngLat, Place, Season, SiteData, SiteObject, SiteProfile, SunStats
 import type { DrawMode } from "./MapView";
 import WindRose from "./WindRose";
 import { Wordmark } from "./Logo";
+import { Checklist, Problems, Timeline, type ToolView } from "./GrowTools";
 import { bedSun, DEFAULT_BEDS, fitBeds, type BedOptions } from "@/lib/beds";
 import { planBeds, type Square } from "@/lib/layout";
 import { CROPS, cropFit, KIND_LABEL, PAIRINGS, plantsPerSquare, SOURCES, SUN_PRACTICAL, type Crop, type FitTag, type Kind } from "@/data/crops";
@@ -19,6 +20,7 @@ const MapView = dynamic(() => import("./MapView"), { ssr: false, loading: () => 
 type Grid = SurfaceGrid & { fromLidar: boolean };
 type Load<T> = { state: "idle" } | { state: "loading" } | { state: "error"; message: string } | { state: "done"; data: T };
 
+const TOOL_LABEL: Record<ToolView, string> = { timeline: "Seed to harvest", problems: "What's wrong?", checklist: "Season checklist" };
 const STEPS = ["Address", "Sun", "Beds", "Plants", "Layout", "Build", "Save"];
 const SEASONS: Season[] = ["spring", "summer", "fall"];
 const SEASON_SHORT: Record<Season, string> = { spring: "Spring", summer: "Summer", fall: "Late summer" };
@@ -95,6 +97,8 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
   const [step, setStep] = useState(0);
   const [bedOpts, setBedOpts] = useState<BedOptions>(DEFAULT_BEDS);
   const [picks, setPicks] = useState<string[]>([]);
+  const [view, setView] = useState<ToolView | null>(null);
+  const [menu, setMenu] = useState(false);
   const [kindFilter, setKindFilter] = useState<Kind | "all">("all");
   const panelRef = useRef<HTMLElement>(null);
 
@@ -317,7 +321,7 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
   const mainSoil = s?.soil?.components.find((c) => c.texture) ?? s?.soil?.components[0];
 
   const reached = [true, !!garden, !!garden, !!garden, !!garden, !!garden, !!place];
-  const go = (i: number) => { if (reached[i]) { setStep(i); setMode("idle"); panelRef.current?.scrollTo({ top: 0 }); } };
+  const go = (i: number) => { if (reached[i]) { setView(null); setStep(i); setMode("idle"); panelRef.current?.scrollTo({ top: 0 }); } };
   const nextOk = step < STEPS.length - 1 && reached[step + 1];
 
   return (
@@ -343,7 +347,17 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
             ))}
           </ol>
         </nav>
-        <span className="step-mobile">Step {step + 1} of {STEPS.length} · {STEPS[step]}</span>
+        <span className="step-mobile">{view ? TOOL_LABEL[view] : `Step ${step + 1} of ${STEPS.length} · ${STEPS[step]}`}</span>
+        <div className="tools-menu">
+          <button className={`tools-btn${view ? " on" : ""}`} onClick={() => setMenu(!menu)} aria-expanded={menu} aria-haspopup="menu">Grow tools ▾</button>
+          {menu && (
+            <ul className="tools-pop glass" role="menu">
+              {(Object.keys(TOOL_LABEL) as ToolView[]).map((k) => (
+                <li key={k}><button role="menuitem" onClick={() => { setView(k); setMenu(false); panelRef.current?.scrollTo({ top: 0 }); }}>{TOOL_LABEL[k]}</button></li>
+              ))}
+            </ul>
+          )}
+        </div>
       </header>
 
       <main className="mapwrap">
@@ -384,7 +398,19 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
         {toast && <div className="toast" role="status">{toast}</div>}
       </main>
 
-      <aside className="panel glass" ref={panelRef}>
+      <aside className={`panel glass${view ? " wide" : ""}`} ref={panelRef}>
+        {view ? (
+          <>
+            <p className="eyebrow">Grow tools · {TOOL_LABEL[view]}</p>
+            {view === "timeline" && <Timeline picks={picks} frost={frost} onPick={() => go(garden ? 3 : 0)} />}
+            {view === "problems" && <Problems />}
+            {view === "checklist" && <Checklist frost={frost} />}
+            <div className="stepnav">
+              <button className="btn ghost" onClick={() => setView(null)}>← Back to step {step + 1}: {STEPS[step]}</button>
+              <span />
+            </div>
+          </>
+        ) : (<>
         <p className="eyebrow">Step {step + 1} · {STEPS[step]}</p>
 
         {step === 0 && (
@@ -613,6 +639,7 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
             </button>
           )}
         </div>
+        </>)}
       </aside>
     </div>
   );
