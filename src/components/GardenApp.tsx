@@ -1070,9 +1070,13 @@ function AddressSearch({ onPick, initial = "", onDropPin }: { onPick: (p: Place)
   const [msg, setMsg] = useState<string | null>(null);
   const [near, setNear] = useState<Place[] | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The place picked from the list. Pressing Go without changing the text keeps it, instead of
+  // looking the words up again (the address service can match a different house).
+  const chosen = useRef<Place | null>(null);
 
   const onChange = (v: string) => {
     setQ(v);
+    chosen.current = null;
     setMsg(null);
     if (timer.current) clearTimeout(timer.current);
     if (v.trim().length < 4) return setItems([]);
@@ -1088,6 +1092,7 @@ function AddressSearch({ onPick, initial = "", onDropPin }: { onPick: (p: Place)
   };
 
   const pick = (p: Place) => {
+    chosen.current = p;
     setQ(p.label);
     setOpen(false);
     setItems([]);
@@ -1096,6 +1101,9 @@ function AddressSearch({ onPick, initial = "", onDropPin }: { onPick: (p: Place)
 
   const search = async (text: string) => {
     if (!text.trim()) return;
+    if (chosen.current && chosen.current.label === text) return pick(chosen.current);
+    const listed = items.find((p) => p.label.trim().toLowerCase() === text.trim().toLowerCase());
+    if (listed) return pick(listed);
     setBusy(true);
     setNear(null);
     setMsg(null);
