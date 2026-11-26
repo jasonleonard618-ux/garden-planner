@@ -534,3 +534,13 @@ a.btn { text-decoration: none; display: inline-block; }
 .plant-list li b { font-weight: 600; font-variant-numeric: tabular-nums; }
 .plan-side .plant-table { font-size: 11px; }
 @media (max-width: 760px) { .sheet-split.planting { grid-template-columns: 1fr; } .plant-list { grid-template-columns: 1fr 1fr; } }
+/* Construction sheets: drawn at 1800 × 1200 and scaled to the sheet width. */
+.sheet.cd-sheet { padding: 0; aspect-ratio: 3 / 2; height: auto; overflow: hidden; }
+.cd-fit { position: relative; width: 100%; aspect-ratio: 3 / 2; overflow: hidden; background: #fff; }
+.cd-inner { position: absolute; left: 0; top: 0; width: 1800px; height: 1200px; font-family: var(--sans); color: #141A19; }
+.cd-inner h3 { font-family: inherit; color: inherit; text-transform: none; }
+@media print {
+  .sheet.cd-sheet { height: auto; aspect-ratio: auto; }
+  .cd-fit { width: 10.2in; height: 6.8in; aspect-ratio: auto; margin: 0.3in auto 0; }
+  .cd-inner { zoom: 0.544 !important; }
+}

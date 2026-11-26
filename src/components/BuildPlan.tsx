@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useMemo } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type { Bed } from "@/lib/beds";
 import type { Plan } from "@/lib/layout";
 import { BED_TIERS, bedLines, dripLines, fenceLayout, fenceLines, FENCE_TIERS, total, type Line, type Tier } from "@/lib/build";
@@ -307,27 +307,6 @@ function PlantList({ plan }: { plan: Plan }) {
   );
 }
 
-function BedDrawing({ tier }: { tier: BedTier }) {
-  const t = BED_TIERS[tier];
-  const h = t.courses * 9.25;
-  const sc = 5; // px per inch
-  const W = 96 * sc, H = h * sc;
-  return (
-    <svg viewBox={`-90 -40 ${W + 400} ${H + 120}`} className="sheet-svg" role="img" aria-label="Bed side elevation and end view">
-      {Array.from({ length: t.courses }, (_, i) => <rect key={i} x="0" y={H - (i + 1) * 9.25 * sc} width={W} height={9.25 * sc} fill="#F4EFE6" stroke="#10221F" />)}
-      {t.cap && <rect x="-10" y={-1.5 * sc} width={W + 20} height={1.5 * sc} fill="#E9DFCF" stroke="#10221F" />}
-      {[0, W - 3.5 * sc].map((x) => <rect key={x} x={x} y={-0} width={3.5 * sc} height={H + 2 * sc} fill="none" stroke="#10221F" strokeDasharray="4 3" />)}
-      <line x1="0" y1={H + 26} x2={W} y2={H + 26} stroke="#10221F" /><text x={W / 2} y={H + 42} textAnchor="middle" className="sv-s">{`8'-0" side`}</text>
-      <line x1={-18} y1={0} x2={-18} y2={H} stroke="#10221F" /><text x={-24} y={H / 2} textAnchor="end" className="sv-s">{`${h.toFixed(1)}"`}</text>
-      <g transform={`translate(${W + 60}, 0)`}>
-        {Array.from({ length: t.courses }, (_, i) => <rect key={i} x="0" y={H - (i + 1) * 9.25 * sc} width={48 * sc * 0.9} height={9.25 * sc} fill="#F4EFE6" stroke="#10221F" />)}
-        <line x1="0" y1={H + 26} x2={48 * sc * 0.9} y2={H + 26} stroke="#10221F" /><text x={24 * sc * 0.9} y={H + 42} textAnchor="middle" className="sv-s">{`4'-0" end (boards cut 45")`}</text>
-      </g>
-      <text x="0" y={-18} className="sv-s">Side elevation · dashed: 4×4 corner posts inside the corners{t.liner ? " · liner on soil side" : ""}</text>
-    </svg>
-  );
-}
-
 function TitleBlock({ no, title, name }: { no: string; title: string; name: string }) {
   return (
     <div className="titleblock">
@@ -340,9 +319,52 @@ function TitleBlock({ no, title, name }: { no: string; title: string; name: stri
   );
 }
 
+const BED_NO = { good: 1, better: 2, best: 3 } as const;
+const FENCE_NO: Record<Tier, number> = { good: 1, better: 2, best: 3, excellent: 4 };
+const escHtml = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+/** One construction sheet (1800 × 1200, drawn by the planning-set generator), filled in for this garden and scaled to fit. */
+function CdSheet({ no, name, index }: { no: string; name: string; index: [string, string][] }) {
+  const [raw, setRaw] = useState("");
+  const [scale, setScale] = useState(0.5);
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    let live = true;
+    fetch(`/cd/${no}.html`).then((r) => (r.ok ? r.text() : "")).then((t) => live && setRaw(t)).catch(() => {});
+    return () => { live = false; };
+  }, [no]);
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setScale(el.clientWidth / 1800));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const html = useMemo(() => {
+    const rows = index.map(([n, t]) => `<div style="display: flex; justify-content: space-between; gap: 6px"><span${n === no ? ' style="font-weight: 600"' : ""}>${n}</span><span style="color: #6B7774">${escHtml(t)}</span></div>`).join("");
+    return raw.replace("%%PROJECT%%", escHtml(name)).replace("%%INDEX%%", rows).replace("%%DATE%%", new Date().toLocaleDateString("en-US"));
+  }, [raw, name, index, no]);
+  return (
+    <section className="sheet cd-sheet" aria-label={`Sheet ${no}`}>
+      <div className="cd-fit" ref={box}>
+        {html ? <div className="cd-inner" style={{ zoom: scale }} dangerouslySetInnerHTML={{ __html: html }} /> : <p className="muted small">Loading sheet {no}…</p>}
+      </div>
+    </section>
+  );
+}
+
 export function BuildPlanSheets({ name, garden, beds, ends, plan, choices, onClose }: { name: string; garden: LngLat[]; beds: Bed[]; ends: [string, string]; plan: Plan; choices: BuildChoices; onClose: () => void }) {
   const cap = (w: string) => w[0].toUpperCase() + w.slice(1);
   const b = useBuild(garden, beds, choices)!;
+  const fence = !!b.fl && choices.fence !== "none";
+  const index: [string, string][] = [
+    ["A-101", "Site and planting plan"],
+    [`B-10${BED_NO[choices.bed]}`, `Bed, ${BED_TIERS[choices.bed].name.toLowerCase()}`],
+    ...(fence ? [["F-100", "Fence layout"], [`F-10${FENCE_NO[choices.fence as Tier]}`, `Fence, ${FENCE_TIERS[choices.fence as Tier].name.toLowerCase()}`]] as [string, string][] : []),
+    ...(fence && choices.fence === "excellent" ? [["F-501", "Gate details"]] as [string, string][] : []),
+    ...(choices.drip ? [["D-101", "Drip plan"]] as [string, string][] : []),
+    ["C-101", "Shopping list"],
+  ];
   return (
     <div className="sheets" role="dialog" aria-label="Build plan">
       <div className="sheets-bar no-print">
@@ -372,36 +394,26 @@ export function BuildPlanSheets({ name, garden, beds, ends, plan, choices, onClo
           </div>
         </div>
         <p className="sheet-note">{beds.length} beds, 4 × 8 ft, long sides {ends[0] === "north" ? "roughly north to south" : "roughly east to west"}, kept 1½ ft in from the outline.{b.fl ? " Squares are fence posts." : ""} Plants are drawn at Extension spacing; crops planted closer than 6 in show as a fill, not one symbol per plant. Paler plants get less sun than they like.</p>
-        <TitleBlock no="A-1" title="Site plan" name={name} />
+        <TitleBlock no="A-101" title="Site plan" name={name} />
       </section>
-      <section className="sheet">
-        <h2>Raised bed, {BED_TIERS[choices.bed].name.toLowerCase()}</h2>
-        <BedDrawing tier={choices.bed} />
-        <ol className="steps-list">
-          <li>Cut one 8 ft 2×10 into two 45 in end boards per course.</li>
-          <li>Cut 4×4 corner posts to the bed height plus 2 in; screw each board to the posts with three 3 in screws per end.</li>
-          <li>Set the bed level on the ground where it will stay; the spare 2 in of post goes into the soil.</li>
-          {BED_TIERS[choices.bed].liner && <li>Staple liner to the inside faces only, leaving the bottom open to drain.</li>}
-          {choices.drip && <li>Set the drip tee and riser where the bed meets the mainline before filling with soil.</li>}
-          <li>Fill with raised-bed soil mix and water it in to settle.</li>
-        </ol>
-        <TitleBlock no="B-1" title="Bed construction" name={name} />
-      </section>
-      {b.fl && choices.fence !== "none" && (
+      <CdSheet no={`B-10${BED_NO[choices.bed]}`} name={name} index={index} />
+      {fence && (
         <section className="sheet">
-          <h2>Fence layout, {FENCE_TIERS[choices.fence].name.toLowerCase()}</h2>
+          <h2>Fence layout, {FENCE_TIERS[choices.fence as Tier].name.toLowerCase()}</h2>
           <PlanSvg garden={garden} beds={beds} fl={b.fl} kind="fence" />
-          <p className="sheet-note">{b.fl.posts} posts. Each side is split into equal bays no wider than {FENCE_TIERS[choices.fence].maxBayFt} ft, measured center to center (O.C.). {FENCE_TIERS[choices.fence].summary} Source: <a href={SRC.ugaFence.href}>{SRC.ugaFence.label}</a>{FENCE_TIERS[choices.fence].src === "practical" ? " for heights; the cattle-panel build is a practical choice" : ""}.</p>
+          <p className="sheet-note">{b.fl!.posts} posts. Each side is split into equal bays no wider than {FENCE_TIERS[choices.fence as Tier].maxBayFt} ft, measured center to center (O.C.). {FENCE_TIERS[choices.fence as Tier].summary} Source: <a href={SRC.ugaFence.href}>{SRC.ugaFence.label}</a>{FENCE_TIERS[choices.fence as Tier].src === "practical" ? " for heights; the cattle-panel build is a practical choice" : ""}.</p>
           <p className="sheet-note"><b>Call 811 before digging post holes.</b> Check fence height and permit rules with your town or HOA, and set concrete footings below your local frost line.</p>
-          <TitleBlock no="B-2" title="Fence layout" name={name} />
+          <TitleBlock no="F-100" title="Fence layout" name={name} />
         </section>
       )}
+      {fence && <CdSheet no={`F-10${FENCE_NO[choices.fence as Tier]}`} name={name} index={index} />}
+      {fence && choices.fence === "excellent" && <CdSheet no="F-501" name={name} index={index} />}
       {choices.drip && (
         <section className="sheet">
           <h2>Drip watering</h2>
           <PlanSvg garden={garden} beds={beds} fl={null} kind="drip" />
           <p className="sheet-note">A ½ in mainline (orange) runs down the middle path with a tee and riser to each bed and three lines of 12 in emitter tubing per bed (dotted). Assembly at the spigot, in order: backflow preventer, timer, 25 psi regulator, filter. Source: <a href={SRC.clemsonDrip.href}>{SRC.clemsonDrip.label}</a>. Start with about 30 minutes every other day and adjust to your soil and weather (practical starting point).</p>
-          <TitleBlock no="B-3" title="Drip plan" name={name} />
+          <TitleBlock no="D-101" title="Drip plan" name={name} />
         </section>
       )}
       <section className="sheet flow">
@@ -422,7 +434,7 @@ export function BuildPlanSheets({ name, garden, beds, ends, plan, choices, onClo
         ))}
         <p className="sheet-total">Rough materials total: <b>{usd(b.sum)}</b></p>
         <p className="sheet-note">Prices are rough national figures to help you budget, not quotes. Check your local store; lumber prices change often.</p>
-        <TitleBlock no="C-1" title="Shopping list" name={name} />
+        <TitleBlock no="C-101" title="Shopping list" name={name} />
       </section>
     </div>
   );
