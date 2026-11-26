@@ -7,6 +7,43 @@ import { useEffect, useRef } from "react";
 import { closeRing, fmt, measure } from "@/lib/geo";
 import type { LngLat, SiteObject } from "@/lib/types";
 
+export type DraftApi = { undo: () => void; clear: () => void; finish: () => void; count: () => number };
+
+// Small local flat projection (metres) around a reference point; plenty accurate across a yard.
+function flat(ref: LngLat) {
+  const mx = 111320 * Math.cos((ref[1] * Math.PI) / 180), my = 110574;
+  return {
+    to: (p: LngLat): [number, number] => [(p[0] - ref[0]) * mx, (p[1] - ref[1]) * my],
+    from: ([x, y]: [number, number]): LngLat => [ref[0] + x / mx, ref[1] + y / my],
+  };
+}
+
+/** Rectangle from one side (a to b) and any point c on the opposite side. */
+export function rectFrom(a: LngLat, b: LngLat, c: LngLat): LngLat[] {
+  const f = flat(a);
+  const B = f.to(b), C = f.to(c);
+  const L = Math.hypot(B[0], B[1]) || 1;
+  const n: [number, number] = [-B[1] / L, B[0] / L];
+  const d = C[0] * n[0] + C[1] * n[1];
+  return [a, b, f.from([B[0] + n[0] * d, B[1] + n[1] * d]), f.from([n[0] * d, n[1] * d])];
+}
+
+/** Snap the side from the last point to p so it runs parallel or square to the first side. */
+function squareUp(pts: LngLat[], p: LngLat): LngLat {
+  if (pts.length < 2) return p;
+  const f = flat(pts[pts.length - 1]);
+  const A = f.to(pts[0]), B = f.to(pts[1]), P = f.to(p);
+  const base = Math.atan2(B[1] - A[1], B[0] - A[0]);
+  const ang = Math.atan2(P[1], P[0]);
+  const q = Math.PI / 2;
+  const snapped = base + Math.round((ang - base) / q) * q;
+  let diff = Math.abs(ang - snapped) % (2 * Math.PI);
+  if (diff > Math.PI) diff = 2 * Math.PI - diff;
+  if (diff > (12 * Math.PI) / 180) return p;
+  const len = P[0] * Math.cos(snapped) + P[1] * Math.sin(snapped);
+  return f.from([Math.cos(snapped) * len, Math.sin(snapped) * len]);
+}
+
 export type DrawMode = "idle" | "garden" | "structure" | "clear" | "tree" | "pin";
 
 type Props = {
@@ -21,7 +58,14 @@ type Props = {
   mode: DrawMode;
   onRingComplete: (ring: LngLat[]) => void;
   onPoint: (p: LngLat) => void;
-  draftRef: React.MutableRefObject<{ undo: () => void; finish: () => void; count: () => number } | null>;
+  draftRef: React.MutableRefObject<DraftApi | null>;
+  /** "rect": tap two corners along one side, then a third tap sets the depth. "free": tap each corner. */
+  shape?: "rect" | "free";
+  /** In free mode, snap each side to run parallel or square to the first side when it's within 12°. */
+  square?: boolean;
+  /** When set, shows draggable corner handles and a move handle for this outline. */
+  editRing?: LngLat[] | null;
+  onEditRing?: (ring: LngLat[]) => void;
   onDraftChange: (n: number) => void;
   beds?: { n: number; ring: LngLat[]; center: LngLat; label: string; tone: "ok" | "low" | "walk" }[];
 };
@@ -104,11 +148,16 @@ export default function MapView(props: Props) {
       if (p.mode === "tree" || p.mode === "pin") return p.onPoint(ll);
       if (p.mode === "idle") return;
       const pts = draft.current;
+      if (p.shape === "rect" && p.mode === "garden") {
+        if (pts.length === 2) { draft.current = rectFrom(pts[0], pts[1], ll); return finish(); }
+        pts.push(ll);
+        return renderDraft();
+      }
       if (pts.length >= 3) {
         const first = m.project(pts[0]);
         if (Math.hypot(first.x - e.point.x, first.y - e.point.y) < 14) return finish();
       }
-      pts.push(ll);
+      pts.push(p.square ? squareUp(pts, ll) : ll);
       renderDraft();
     });
     m.on("dblclick", (e) => {
@@ -119,7 +168,9 @@ export default function MapView(props: Props) {
     });
     m.on("mousemove", (e) => {
       if (latest.current.mode === "idle" || latest.current.mode === "tree" || latest.current.mode === "pin" || !draft.current.length) return;
-      renderDraft([e.lngLat.lng, e.lngLat.lat]);
+      const p = latest.current, ll: LngLat = [e.lngLat.lng, e.lngLat.lat], pts = draft.current;
+      if (p.shape === "rect" && p.mode === "garden" && pts.length === 2) return renderDraft(undefined, rectFrom(pts[0], pts[1], ll));
+      renderDraft(p.square && p.shape !== "rect" ? squareUp(pts, ll) : ll);
     });
 
     map.current = m;
@@ -135,12 +186,12 @@ export default function MapView(props: Props) {
     if (pts.length >= 3) latest.current.onRingComplete(pts);
   }
 
-  function renderDraft(cursor?: LngLat) {
+  function renderDraft(cursor?: LngLat, preview?: LngLat[]) {
     const m = map.current;
     latest.current.onDraftChange(draft.current.length);
     if (!m || !ready.current) return;
     const pts = draft.current;
-    const line = cursor ? [...pts, cursor] : pts;
+    const line = preview ? [...preview, preview[0]] : cursor ? [...pts, cursor] : pts;
     (m.getSource("draft") as GeoJSONSource).setData({
       type: "FeatureCollection",
       features: [
@@ -152,6 +203,7 @@ export default function MapView(props: Props) {
 
   props.draftRef.current = {
     undo: () => { draft.current.pop(); renderDraft(); },
+    clear: () => { draft.current = []; renderDraft(); },
     finish,
     count: () => draft.current.length,
   };
@@ -250,6 +302,47 @@ export default function MapView(props: Props) {
     draft.current = [];
     renderDraft();
   }, [props.mode]);  
+
+  // ---------- edit an outline: drag corners, or drag the centre handle to move it all ----------
+  const editMarkers = useRef<maplibregl.Marker[]>([]);
+  useEffect(() => {
+    const m = map.current;
+    editMarkers.current.forEach((mk) => mk.remove());
+    editMarkers.current = [];
+    const ring = props.editRing;
+    if (!m || !ring) return;
+    let cur = [...ring];
+    const show = (r: LngLat[]) => {
+      if (!ready.current) return;
+      (m.getSource("garden") as GeoJSONSource).setData({ type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: [closeRing(r)] } });
+    };
+    const centroid = (r: LngLat[]): LngLat => [r.reduce((a, p) => a + p[0], 0) / r.length, r.reduce((a, p) => a + p[1], 0) / r.length];
+    const corners = cur.map((pt, i) => {
+      const div = document.createElement("div");
+      div.className = "vertex-handle";
+      div.setAttribute("aria-label", `Corner ${i + 1}`);
+      const mk = new maplibregl.Marker({ element: div, draggable: true }).setLngLat(pt).addTo(m);
+      mk.on("drag", () => { const ll = mk.getLngLat(); cur[i] = [ll.lng, ll.lat]; show(cur); mover.setLngLat(centroid(cur)); });
+      mk.on("dragend", () => latest.current.onEditRing?.([...cur]));
+      return mk;
+    });
+    const mdiv = document.createElement("div");
+    mdiv.className = "move-handle";
+    mdiv.title = "Drag to move the whole outline";
+    mdiv.textContent = "✥";
+    const mover = new maplibregl.Marker({ element: mdiv, draggable: true }).setLngLat(centroid(cur)).addTo(m);
+    let start: LngLat = centroid(cur), base = cur;
+    mover.on("dragstart", () => { start = centroid(cur); base = [...cur]; });
+    mover.on("drag", () => {
+      const ll = mover.getLngLat(), dx = ll.lng - start[0], dy = ll.lat - start[1];
+      cur = base.map(([x, y]) => [x + dx, y + dy] as LngLat);
+      cur.forEach((pt, i) => corners[i].setLngLat(pt));
+      show(cur);
+    });
+    mover.on("dragend", () => latest.current.onEditRing?.([...cur]));
+    editMarkers.current = [...corners, mover];
+    return () => { editMarkers.current.forEach((mk) => mk.remove()); editMarkers.current = []; };
+  }, [props.editRing]);
 
   useEffect(() => {
     if (props.flyTo && map.current) map.current.flyTo({ center: props.flyTo.center, zoom: props.flyTo.zoom, speed: 1.6, padding: { left: props.flyTo.padLeft ?? 0, top: 0, right: 0, bottom: props.flyTo.padBottom ?? 0 } });

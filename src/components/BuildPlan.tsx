@@ -114,8 +114,14 @@ function PlanSvg({ garden, beds, fl, kind }: { garden: LngLat[]; beds: Bed[]; fl
           <g key={bd.id}>
             <path d={r.map((p, j) => `${j ? "L" : "M"}${p.join(" ")}`).join(" ") + "Z"} fill={kind === "site" ? "#fff" : "#F4F4F2"} stroke="#10221F" strokeWidth="1" />
             {kind === "site" && <line x1={r[0][0]} y1={(r[0][1] + r[2][1]) / 2 + (r[2][1] - r[0][1]) * 0.18} x2={r[1][0]} y2={(r[0][1] + r[2][1]) / 2 + (r[2][1] - r[0][1]) * 0.18} stroke="#10221F" strokeWidth="0.5" strokeDasharray="2 2" opacity="0" />}
-            {kind !== "drip" && <text x={(r[0][0] + r[1][0]) / 2} y={(r[0][1] + r[2][1]) / 2 + 4} textAnchor="middle" className="sv-t">{bd.n}</text>}
-            {kind === "drip" && [0.2, 0.5, 0.8].map((f) => { const x = r[0][0] + (r[1][0] - r[0][0]) * f; return <line key={f} x1={x} y1={r[2][1] + 3} x2={x} y2={r[0][1] - 3} stroke="#145049" strokeWidth="1.4" strokeDasharray="1 2.5" strokeLinecap="round" />; })}
+            {kind !== "drip" && <text x={(r[0][0] + r[2][0]) / 2} y={(r[0][1] + r[2][1]) / 2 + 4} textAnchor="middle" className="sv-t">{bd.n}</text>}
+            {kind === "drip" && [0.2, 0.5, 0.8].map((f) => {
+              // three emitter lines along the bed's long side, inset a little from each end
+              const a = [r[0][0] + (r[1][0] - r[0][0]) * f, r[0][1] + (r[1][1] - r[0][1]) * f];
+              const b = [r[3][0] + (r[2][0] - r[3][0]) * f, r[3][1] + (r[2][1] - r[3][1]) * f];
+              const k = 0.04;
+              return <line key={f} x1={a[0] + (b[0] - a[0]) * k} y1={a[1] + (b[1] - a[1]) * k} x2={b[0] + (a[0] - b[0]) * k} y2={b[1] + (a[1] - b[1]) * k} stroke="#145049" strokeWidth="1.4" strokeDasharray="1 2.5" strokeLinecap="round" />;
+            })}
           </g>
         );
       })}
@@ -123,7 +129,7 @@ function PlanSvg({ garden, beds, fl, kind }: { garden: LngLat[]; beds: Bed[]; fl
         const [mx, top] = P([midX, Math.max(...ys)]); const [, bot] = P([midX, Math.min(...ys) - pad * 0.6]);
         return <>
           <line x1={mx} y1={top} x2={mx} y2={bot} stroke="#FF6F47" strokeWidth="3" />
-          {beds.map((bd) => { const r = bd.ring.map(toFt).map(P); const cy = (r[0][1] + r[2][1]) / 2; const near = Math.abs(r[0][0] - mx) < Math.abs(r[1][0] - mx) ? r[0][0] : r[1][0]; return <line key={bd.id} x1={mx} y1={cy} x2={near} y2={cy} stroke="#FF6F47" strokeWidth="1.6" />; })}
+          {beds.map((bd) => { const r = bd.ring.map(toFt).map(P); const cy = (r[0][1] + r[2][1]) / 2; const cx = (r[0][0] + r[2][0]) / 2; const near = cx + (Math.min(...r.map((q) => Math.abs(q[0] - cx)))) * (mx < cx ? -1 : 1); return <line key={bd.id} x1={mx} y1={cy} x2={near} y2={cy} stroke="#FF6F47" strokeWidth="1.6" />; })}
           <circle cx={mx} cy={bot} r="6" fill="#FF6F47" />
           <text x={mx + 10} y={bot + 4} className="sv-s">From spigot: backflow preventer, timer, 25 psi regulator, filter</text>
         </>;
@@ -182,7 +188,8 @@ function TitleBlock({ no, title, name }: { no: string; title: string; name: stri
   );
 }
 
-export function BuildPlanSheets({ name, garden, beds, plan, choices, onClose }: { name: string; garden: LngLat[]; beds: Bed[]; plan: Plan; choices: BuildChoices; onClose: () => void }) {
+export function BuildPlanSheets({ name, garden, beds, ends, plan, choices, onClose }: { name: string; garden: LngLat[]; beds: Bed[]; ends: [string, string]; plan: Plan; choices: BuildChoices; onClose: () => void }) {
+  const cap = (w: string) => w[0].toUpperCase() + w.slice(1);
   const b = useBuild(garden, beds, choices)!;
   return (
     <div className="sheets" role="dialog" aria-label="Build plan">
@@ -198,7 +205,7 @@ export function BuildPlanSheets({ name, garden, beds, plan, choices, onClose }: 
         <div className="sheet-split">
           <PlanSvg garden={garden} beds={beds} fl={b.fl} kind="site" />
           <table className="shop plant-table">
-            <thead><tr><th>Bed</th><th>North half</th><th>South half</th></tr></thead>
+            <thead><tr><th>Bed</th><th>{cap(ends[0])} half</th><th>{cap(ends[1])} half</th></tr></thead>
             <tbody>
               {plan.beds.map((pb) => (
                 <tr key={pb.n}><td>{pb.n}</td><td>{pb.north.crop ? `${pb.north.crop.name.replace(" (flower)", "")} ×${pb.north.plants}` : "open"}</td><td>{pb.south.crop ? `${pb.south.crop.name.replace(" (flower)", "")} ×${pb.south.plants}` : "open"}</td></tr>
@@ -206,7 +213,7 @@ export function BuildPlanSheets({ name, garden, beds, plan, choices, onClose }: 
             </tbody>
           </table>
         </div>
-        <p className="sheet-note">{beds.length} beds, 4 × 8 ft, long sides north to south, kept 1½ ft in from the outline.{b.fl ? " Squares are fence posts." : ""}</p>
+        <p className="sheet-note">{beds.length} beds, 4 × 8 ft, long sides {ends[0] === "north" ? "roughly north to south" : "roughly east to west"}, kept 1½ ft in from the outline.{b.fl ? " Squares are fence posts." : ""}</p>
         <TitleBlock no="A-1" title="Site plan" name={name} />
       </section>
       <section className="sheet">

@@ -7,14 +7,14 @@ import { fmt, measure, ringBbox, ringCenter, slopeAdvice, terrainStats, toMerc, 
 import { gridCorners, SEASON_DATES, sunColor } from "@/lib/shade";
 import { deleteSite, downloadSite, listSites, readSiteFile, saveSite } from "@/lib/storage";
 import type { LngLat, Place, Season, SiteData, SiteObject, SiteProfile, SunStats, SurfaceGrid, Terrain, TerrainStats } from "@/lib/types";
-import type { DrawMode } from "./MapView";
+import type { DraftApi, DrawMode } from "./MapView";
 import WindRose from "./WindRose";
 import { Wordmark } from "./Logo";
 import { Checklist, Problems, Timeline, type ToolView } from "./GrowTools";
 import { BuildPlanSheets, BuildStep, type BuildChoices } from "./BuildPlan";
 import { Feedback, listAccountPlans, saveToAccount, SignIn, useSession } from "./Account";
 import { supabase, track } from "@/lib/supabase";
-import { bedSun, DEFAULT_BEDS, fitBeds, type BedOptions } from "@/lib/beds";
+import { bedSun, DEFAULT_BEDS, fitBeds, type BedFit, type BedOptions } from "@/lib/beds";
 import { planBeds, type Square } from "@/lib/layout";
 import { CROPS, cropFit, KIND_LABEL, PAIRINGS, plantsPerSquare, SOURCES, SUN_PRACTICAL, type Crop, type FitTag, type Kind } from "@/data/crops";
 
@@ -82,7 +82,11 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
   const [imagery, setImagery] = useState<"usgs" | "esri">("usgs");
   const [mode, setMode] = useState<DrawMode>("idle");
   const [draftCount, setDraftCount] = useState(0);
-  const draftRef = useRef<{ undo: () => void; finish: () => void; count: () => number } | null>(null);
+  const draftRef = useRef<DraftApi | null>(null);
+  const [shape, setShape] = useState<"rect" | "free">("rect");
+  const [square, setSquare] = useState(true);
+  const [editing, setEditing] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
 
   const [site, setSite] = useState<Load<SiteData>>({ state: "idle" });
   const [grid, setGrid] = useState<Load<Grid>>({ state: "idle" });
@@ -339,6 +343,12 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
   const fileInput = useRef<HTMLInputElement>(null);
 
   const drawing = mode !== "idle";
+  // On phones, tuck the panel away while drawing or adjusting so the map has room; bring it back after.
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia("(max-width: 760px)").matches) return;
+    setCollapsed(drawing || editing);
+  }, [drawing, editing]);
+  const rectMode = mode === "garden" && shape === "rect";
   const s = site.state === "done" ? site.data : null;
   const mainSoil = s?.soil?.components.find((c) => c.texture) ?? s?.soil?.components[0];
 
@@ -397,6 +407,10 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
           onPoint={onPoint}
           draftRef={draftRef}
           onDraftChange={setDraftCount}
+          shape={shape}
+          square={square}
+          editRing={editing && step === 0 ? garden : null}
+          onEditRing={(r) => { setGarden(r); setSunBySeason({}); }}
           beds={mapBeds}
           showSides={step < 2}
         />
@@ -415,13 +429,32 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
         )}
         {drawing && (
           <div className="map-ui top-center hint">
-            {mode === "pin" ? "Tap your yard" : mode === "tree" ? "Tap the centre of the tree" : draftCount < 3 ? "Tap each corner" : "Tap the first point or press Finish to close the shape"}
+            {mode === "pin" ? "Tap your yard" : mode === "tree" ? "Tap the centre of the tree"
+              : rectMode ? ["Tap one corner of the garden", "Tap the next corner along the same side", "Tap the opposite side to set the depth"][Math.min(draftCount, 2)]
+              : draftCount < 3 ? "Tap each corner" : "Tap the first point or press Finish to close the shape"}
+          </div>
+        )}
+        {(mode === "garden" || mode === "structure" || mode === "clear") && (
+          <div className="map-ui draw-bar glass" role="toolbar" aria-label="Drawing tools">
+            <button className="btn" disabled={draftCount < 1} onClick={() => draftRef.current?.undo()}>↶ Undo</button>
+            <button className="btn" disabled={draftCount < 1} onClick={() => draftRef.current?.clear()}>Erase</button>
+            {!rectMode && <button className="btn primary" disabled={draftCount < 3} onClick={() => draftRef.current?.finish()}>Finish</button>}
+            <button className="btn ghost" onClick={() => setMode("idle")}>Cancel</button>
+          </div>
+        )}
+        {editing && step === 0 && (
+          <div className="map-ui draw-bar glass" role="toolbar" aria-label="Adjust outline">
+            <span className="small">Drag a corner, or drag ✥ to move the whole outline.</span>
+            <button className="btn primary" onClick={() => setEditing(false)}>Done</button>
           </div>
         )}
         {toast && <div className="toast" role="status">{toast}</div>}
       </main>
 
-      <aside className={`panel glass${view ? " wide" : ""}`} ref={panelRef}>
+      <aside className={`panel glass${view ? " wide" : ""}${collapsed ? " collapsed" : ""}`} ref={panelRef}>
+        <button className="sheet-handle" aria-expanded={!collapsed} aria-label={collapsed ? "Show the panel" : "Hide the panel to see more map"} onClick={() => setCollapsed((c) => !c)}>
+          <span aria-hidden /> {collapsed ? "Show" : "Hide"}
+        </button>
         {view ? (
           <>
             <p className="eyebrow">Grow tools · {TOOL_LABEL[view]}</p>
@@ -450,7 +483,7 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
             {place && !garden && mode !== "garden" && (
               <button className="btn primary" onClick={() => setMode("garden")}>Draw garden outline</button>
             )}
-            {mode === "garden" && <DrawHelp count={draftCount} draftRef={draftRef} onCancel={() => setMode("idle")} />}
+            {mode === "garden" && <ShapePicker shape={shape} setShape={(v) => { setShape(v); draftRef.current?.clear(); }} square={square} setSquare={setSquare} />}
             {garden && measured && mode !== "garden" && (
               <>
                 <div className="stats">
@@ -459,8 +492,9 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
                 </div>
                 <p className="muted small">Side lengths are shown on the map.</p>
                 <div className="row">
-                  <button className="btn" onClick={() => setMode("garden")}>Redraw</button>
-                  <button className="btn ghost" onClick={() => { setGarden(null); setTerrain({ state: "idle" }); }}>Clear</button>
+                  <button className={editing ? "btn primary" : "btn"} onClick={() => setEditing((e) => !e)}>{editing ? "Done adjusting" : "Adjust shape"}</button>
+                  <button className="btn" onClick={() => { setEditing(false); setMode("garden"); }}>Redraw</button>
+                  <button className="btn ghost" onClick={() => { setEditing(false); setGarden(null); setTerrain({ state: "idle" }); }}>Delete outline</button>
                 </div>
               </>
             )}
@@ -539,7 +573,7 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
                   <button className="btn ghost" onClick={() => setMode("idle")}>Cancel</button>
                 </div>
               ) : mode === "structure" || mode === "clear" ? (
-                <DrawHelp count={draftCount} draftRef={draftRef} onCancel={() => setMode("idle")} what={mode === "clear" ? "the removed area" : "its outline"} />
+                <p className="muted small">Tap the corners of {mode === "clear" ? "the removed area" : "its outline"} on the map. Use the buttons on the map to undo, erase or finish.</p>
               ) : (
                 <div className="obj-forms">
                   <fieldset>
@@ -640,7 +674,7 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
         {step === 3 && (
           <PlantsStep picks={picks} setPicks={setPicks} bestSun={bestSun} frost={frost} kind={kindFilter} setKind={setKindFilter} bedSuns={bedSuns} />
         )}
-        {step === 4 && <LayoutStep plan={plan} picks={picks} onPick={() => go(3)} />}
+        {step === 4 && <LayoutStep plan={plan} picks={picks} onPick={() => go(3)} ends={fit?.ends ?? ["north", "south"]} />}
         {step === 5 && garden && fit && <BuildStep garden={garden} beds={fit.beds} choices={build} setChoices={setBuild} onOpen={() => setSheets(true)} />}
 
         {step === 6 && (
@@ -698,7 +732,7 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
         </>)}
       </aside>
       {sheets && garden && fit && (
-        <BuildPlanSheets name={profileName.trim() || place?.label.split(",")[0] || "My garden"} garden={garden} beds={fit.beds} plan={plan} choices={build} onClose={() => setSheets(false)} />
+        <BuildPlanSheets name={profileName.trim() || place?.label.split(",")[0] || "My garden"} garden={garden} beds={fit.beds} ends={fit.ends} plan={plan} choices={build} onClose={() => setSheets(false)} />
       )}
     </div>
   );
@@ -719,15 +753,22 @@ function Busy({ text }: { text: string }) {
   return <p className="busy"><span className="spinner" aria-hidden /> {text}</p>;
 }
 
-function DrawHelp({ count, draftRef, onCancel, what = "the corners" }: { count: number; draftRef: React.MutableRefObject<{ undo: () => void; finish: () => void } | null>; onCancel: () => void; what?: string }) {
+function ShapePicker({ shape, setShape, square, setSquare }: { shape: "rect" | "free"; setShape: (s: "rect" | "free") => void; square: boolean; setSquare: (b: boolean) => void }) {
   return (
     <div className="draw-help">
-      <p>Tap {what} on the map ({count} so far). Tap the first point again, or press Finish, to close it.</p>
-      <div className="row">
-        <button className="btn primary" disabled={count < 3} onClick={() => draftRef.current?.finish()}>Finish</button>
-        <button className="btn" disabled={count < 1} onClick={() => draftRef.current?.undo()}>Undo point</button>
-        <button className="btn ghost" onClick={onCancel}>Cancel</button>
+      <div className="tabs" role="radiogroup" aria-label="Outline shape">
+        <button role="radio" aria-checked={shape === "rect"} className={shape === "rect" ? "tab on" : "tab"} onClick={() => setShape("rect")}>Rectangle</button>
+        <button role="radio" aria-checked={shape === "free"} className={shape === "free" ? "tab on" : "tab"} onClick={() => setShape("free")}>Any shape</button>
       </div>
+      {shape === "rect" ? (
+        <p className="small">Tap two corners along one side, then tap the opposite side. You get a true rectangle, turned to match your yard.</p>
+      ) : (
+        <>
+          <p className="small">Tap each corner. Tap the first point again, or press Finish on the map, to close it.</p>
+          <label className="check small"><input type="checkbox" checked={square} onChange={(e) => setSquare(e.target.checked)} /> Square up corners (snaps sides that are nearly straight or square)</label>
+        </>
+      )}
+      <p className="muted small">Undo and Erase are on the map. After you finish, use Adjust shape to drag corners or move the outline.</p>
     </div>
   );
 }
@@ -774,6 +815,14 @@ function Why({ href }: { href: string }) {
 
 // ---------- step 3: beds ----------
 
+const DIRS = [
+  { id: "auto", label: "Best fit" },
+  { id: "ns", label: "North–south" },
+  { id: "outline", label: "Along outline" },
+  { id: "ew", label: "East–west" },
+] as const;
+const DIR_NAME = { ns: "north–south", outline: "the outline's direction", ew: "east–west" } as const;
+
 function BedsStep({ fit, cols, opts, setOpts, suns, season, sunBusy }: {
   fit: ReturnType<typeof fitBeds>; cols: number; opts: BedOptions; setOpts: (o: BedOptions) => void;
   suns: (number | null)[] | null; season: string; sunBusy: boolean;
@@ -784,7 +833,23 @@ function BedsStep({ fit, cols, opts, setOpts, suns, season, sunBusy }: {
   return (
     <>
       <h1 className="title">Fit your raised beds</h1>
-      <p className="lede">4 × 8 ft beds, long side running north to south so they shade each other less, with paths between them.</p>
+      <p className="lede">4 × 8 ft beds with paths between them, kept 1½ ft inside your outline so you can walk around the edge.</p>
+      <h3>Bed direction</h3>
+      <div className="tabs dir-tabs" role="radiogroup" aria-label="Bed direction">
+        {DIRS.filter((d) => d.id !== "outline" || fit.counts.outline != null).map((d) => {
+          const on = (opts.orient ?? "auto") === d.id;
+          const count = d.id === "auto" ? Math.max(fit.counts.ns, fit.counts.ew, fit.counts.outline ?? 0) : fit.counts[d.id];
+          return (
+            <button key={d.id} role="radio" aria-checked={on} className={on ? "tab on" : "tab"} onClick={() => setOpts({ ...opts, orient: d.id, walkways: [] })}>
+              {d.label}<small>{count} bed{count === 1 ? "" : "s"}</small>
+            </button>
+          );
+        })}
+      </div>
+      <p className="muted small">
+        {(opts.orient ?? "auto") === "auto" ? `Using ${DIR_NAME[fit.orient]}, which fits the most beds. ` : ""}
+        North–south beds shade each other least, so pick it when the count is close (practical choice).
+      </p>
       {n === 0 ? (
         <p className="warn">No 4 × 8 ft bed fits inside this outline with {opts.pathFt} ft paths. Try narrower paths or redraw a larger area.</p>
       ) : (
@@ -806,7 +871,7 @@ function BedsStep({ fit, cols, opts, setOpts, suns, season, sunBusy }: {
       {cols > 1 && (
         <>
           <h3>Walkway</h3>
-          <p className="muted small">Turn a column of beds into a wide front-to-back path. Columns are counted from the west.</p>
+          <p className="muted small">Turn a column of beds into a wide front-to-back path. Columns are counted from the {fit.colsFrom}.</p>
           <div className="chips">
             {Array.from({ length: cols }, (_, c) => (
               <button key={c} className={opts.walkways.includes(c) ? "chip on" : "chip"} aria-pressed={opts.walkways.includes(c)} onClick={() => toggleWalk(c)}>
@@ -919,7 +984,9 @@ function CropFacts({ c, bedsOk, beds, frost }: { c: Crop; bedsOk: number | null;
 
 // ---------- step 5: layout ----------
 
-function LayoutStep({ plan, picks, onPick }: { plan: ReturnType<typeof planBeds>; picks: string[]; onPick: () => void }) {
+function LayoutStep({ plan, picks, onPick, ends }: { plan: ReturnType<typeof planBeds>; picks: string[]; onPick: () => void; ends: BedFit["ends"] }) {
+  const [e1, e2] = ends;
+  const cap = (w: string) => w[0].toUpperCase() + w.slice(1);
   if (!picks.length) {
     return (
       <>
@@ -934,14 +1001,16 @@ function LayoutStep({ plan, picks, onPick }: { plan: ReturnType<typeof planBeds>
   return (
     <>
       <h1 className="title">Lay out each bed</h1>
-      <p className="lede">Each bed is split into a north and a south 4 × 4 ft square. Tall crops sit on the north end so they don&apos;t shade the rest.</p>
+      <p className="lede">{e1 === "north"
+        ? <>Each bed is split into a north and a south 4 × 4 ft square. Tall crops sit on the north end so they don&apos;t shade the rest.</>
+        : <>Each bed is split into a west and an east 4 × 4 ft square. With east–west beds, put trellised crops along the north side of the garden where you can.</>}</p>
       <div className="bedgrid">
         {plan.beds.map((b) => (
           <figure key={b.n} className="bedcard">
             <figcaption><b>Bed {b.n}</b><span>{b.sun == null ? "" : `${fmt(b.sun, 1)} hrs sun`}</span></figcaption>
-            <BedSvg north={b.north} south={b.south} />
+            <BedSvg north={b.north} south={b.south} ends={ends} />
             <dl className="bedkey">
-              {([["N", b.north], ["S", b.south]] as const).map(([k, sq]) => (
+              {([[cap(e1)[0], b.north], [cap(e2)[0], b.south]] as const).map(([k, sq]) => (
                 <div key={k} className={sq.lowSun ? "low" : ""}>
                   <dt>{k}</dt>
                   <dd>{sq.crop ? <><i style={{ background: dotColor(sq.crop.id) }} />{sq.crop.name.split(" /")[0].replace(" (flower)", "")} ×{sq.plants}</> : <span className="muted">open</span>}</dd>
@@ -951,7 +1020,7 @@ function LayoutStep({ plan, picks, onPick }: { plan: ReturnType<typeof planBeds>
           </figure>
         ))}
       </div>
-      <p className="muted small">N is up. Dots show plant positions at Extension spacing.</p>
+      <p className="muted small">{cap(e1)} end is at the top of each drawing. Dots show plant positions at Extension spacing.</p>
       {plan.pairs.map((p) => (
         <p key={p.a} className="pair small"><b>Backed by trials:</b> {p.claim} <a className="why" href={p.source.href} target="_blank" rel="noreferrer">Why?</a></p>
       ))}
@@ -965,7 +1034,7 @@ function LayoutStep({ plan, picks, onPick }: { plan: ReturnType<typeof planBeds>
 const DOT = ["#FF6F47", "#145049", "#F2B544", "#6FB08A", "#B8401F", "#7A9E3B", "#4F7CAC", "#C98A2B"];
 const dotColor = (id: string) => DOT[CROPS.findIndex((c) => c.id === id) % DOT.length];
 
-function BedSvg({ north, south }: { north: Square; south: Square }) {
+function BedSvg({ north, south, ends }: { north: Square; south: Square; ends: BedFit["ends"] }) {
   const half = (s: Square, y0: number) => {
     if (!s.crop) return null;
     const [a, b] = s.crop.spacing;
@@ -982,7 +1051,7 @@ function BedSvg({ north, south }: { north: Square; south: Square }) {
     );
   };
   return (
-    <svg viewBox="-1 -1 50 98" width="100%" role="img" aria-label={`North: ${north.crop?.name ?? "open"}. South: ${south.crop?.name ?? "open"}.`}>
+    <svg viewBox="-1 -1 50 98" width="100%" role="img" aria-label={`${ends[0]}: ${north.crop?.name ?? "open"}. ${ends[1]}: ${south.crop?.name ?? "open"}.`}>
       <rect x="0" y="0" width="48" height="96" rx="2" fill="#F4EFE6" stroke="#0B3530" strokeWidth="1" />
       <line x1="0" y1="48" x2="48" y2="48" stroke="#0B3530" strokeWidth="0.5" strokeDasharray="2 1.5" />
       {half(north, 0)}
