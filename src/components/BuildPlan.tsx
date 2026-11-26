@@ -7,6 +7,8 @@ import { BED_TIERS, bedLines, dripLines, fenceLayout, fenceLines, FENCE_TIERS, t
 import { measure } from "@/lib/geo";
 import { SRC } from "@/data/sources";
 import { SourceLink } from "./GrowTools";
+import { Plant, plantStyle } from "./PlantArt";
+import { CROPS } from "@/data/crops";
 import type { LngLat } from "@/lib/types";
 
 type BedTier = keyof typeof BED_TIERS;
@@ -168,13 +170,14 @@ function useLocal(garden: LngLat[]) {
   return (p: LngLat): [number, number] => [(p[0] - lon0) * kx, (p[1] - lat0) * ky];
 }
 
-function PlanSvg({ garden, beds, fl, kind }: { garden: LngLat[]; beds: Bed[]; fl: ReturnType<typeof fenceLayout> | null; kind: "site" | "fence" | "drip" }) {
+function PlanSvg({ garden, beds, fl, kind, plan, ends }: { garden: LngLat[]; beds: Bed[]; fl: ReturnType<typeof fenceLayout> | null; kind: "site" | "fence" | "drip"; plan?: Plan; ends?: [string, string] }) {
   const toFt = useLocal(garden);
   const ring = garden.map(toFt);
   const xs = ring.map((p) => p[0]), ys = ring.map((p) => p[1]);
-  const pad = 8;
+  const pad = kind === "site" ? 3 : 8;
   const [x0, x1, y0, y1] = [Math.min(...xs) - pad, Math.max(...xs) + pad, Math.min(...ys) - pad, Math.max(...ys) + pad];
-  const W = kind === "site" ? 520 : 640, s = Math.min(W / (x1 - x0), 380 / (y1 - y0));
+  const s = Math.min(640 / (x1 - x0), (kind === "site" ? 440 : 380) / (y1 - y0));
+  const W = kind === "site" ? (x1 - x0) * s : 640;
   const H = (y1 - y0) * s;
   const P = ([x, y]: [number, number]) => [(x - x0) * s, (y1 - y) * s] as [number, number];
   const path = ring.map((p, i) => `${i ? "L" : "M"}${P(p).join(" ")}`).join(" ") + "Z";
@@ -188,15 +191,15 @@ function PlanSvg({ garden, beds, fl, kind }: { garden: LngLat[]; beds: Bed[]; fl
   const midX = (Math.min(...xs) + Math.max(...xs)) / 2;
   const scaleFt = 10;
   return (
-    <svg viewBox={`-150 -30 ${W + 300} ${H + 80}`} className="sheet-svg" role="img" aria-label={`${kind} plan`}>
-      <path d={path} fill={kind === "site" ? "#EEF5F0" : "none"} stroke="#10221F" strokeWidth={kind === "fence" ? 2.2 : 1.2} strokeDasharray={kind === "site" ? "5 3" : undefined} />
+    <svg viewBox={kind === "site" ? `-30 -20 ${W + 80} ${H + 70}` : `-150 -30 ${W + 300} ${H + 80}`} className="sheet-svg" role="img" aria-label={`${kind} plan`}>
+      {kind === "site" && <defs><pattern id="pl-soil" width="6" height="6" patternUnits="userSpaceOnUse"><rect width="6" height="6" fill="#4A3E33" /><circle cx="1.5" cy="1.5" r="0.6" fill="#2E261F" /><circle cx="4.5" cy="4" r="0.5" fill="#6E5D4C" /></pattern><pattern id="pl-chips" width="10" height="10" patternUnits="userSpaceOnUse"><rect width="10" height="10" fill="#EFE8D8" /><circle cx="2.5" cy="2.5" r="0.8" fill="#C9B79A" /><circle cx="7.5" cy="6" r="0.7" fill="#B5A285" /></pattern></defs>}
+      <path d={path} fill={kind === "site" ? "url(#pl-chips)" : "none"} stroke="#10221F" strokeWidth={kind === "fence" ? 2.2 : 1.2} strokeDasharray={kind === "site" ? "5 3" : undefined} />
       {beds.map((bd) => {
         const r = bd.ring.map(toFt).map(P);
         return (
           <g key={bd.id}>
-            <path d={r.map((p, j) => `${j ? "L" : "M"}${p.join(" ")}`).join(" ") + "Z"} fill={kind === "site" ? "#fff" : "#F4F4F2"} stroke="#10221F" strokeWidth="1" />
-            {kind === "site" && <line x1={r[0][0]} y1={(r[0][1] + r[2][1]) / 2 + (r[2][1] - r[0][1]) * 0.18} x2={r[1][0]} y2={(r[0][1] + r[2][1]) / 2 + (r[2][1] - r[0][1]) * 0.18} stroke="#10221F" strokeWidth="0.5" strokeDasharray="2 2" opacity="0" />}
-            {kind !== "drip" && <text x={(r[0][0] + r[2][0]) / 2} y={(r[0][1] + r[2][1]) / 2 + 4} textAnchor="middle" className="sv-t">{bd.n}</text>}
+            <path d={r.map((p, j) => `${j ? "L" : "M"}${p.join(" ")}`).join(" ") + "Z"} fill={kind === "site" ? "#E4D6BC" : "#F4F4F2"} stroke="#10221F" strokeWidth={kind === "site" ? 1.3 : 1} />
+            {kind === "site" ? <PlantedBed r={r} s={s} bed={plan?.beds.find((pb) => pb.n === bd.n)} ends={ends ?? ["north", "south"]} n={bd.n} /> : kind !== "drip" && <text x={(r[0][0] + r[2][0]) / 2} y={(r[0][1] + r[2][1]) / 2 + 4} textAnchor="middle" className="sv-t">{bd.n}</text>}
             {kind === "drip" && [0.2, 0.5, 0.8].map((f) => {
               // three emitter lines along the bed's long side, inset a little from each end
               const a = [r[0][0] + (r[1][0] - r[0][0]) * f, r[0][1] + (r[1][1] - r[0][1]) * f];
@@ -234,6 +237,73 @@ function PlanSvg({ garden, beds, fl, kind }: { garden: LngLat[]; beds: Bed[]; fl
         <text x="0" y="18" className="sv-s">0</text><text x={scaleFt * s} y="18" className="sv-s" textAnchor="middle">10 ft</text><text x={2 * scaleFt * s} y="18" className="sv-s" textAnchor="middle">20 ft</text>
       </g>
     </svg>
+  );
+}
+
+type PV = [number, number];
+/** A bed in plan: cedar frame, soil, and each half planted at its crop's spacing, with a number tag off the first end. */
+function PlantedBed({ r, s, bed, ends, n }: { r: PV[]; s: number; bed?: Plan["beds"][number]; ends: [string, string]; n: number }) {
+  // corners as origin + a*e1 + b*e2; e1 runs along the long side
+  const d = (p: PV, q: PV) => Math.hypot(q[0] - p[0], q[1] - p[1]);
+  const longFirst = d(r[0], r[1]) >= d(r[1], r[2]);
+  const o = r[0], e1: PV = longFirst ? [r[1][0] - o[0], r[1][1] - o[1]] : [r[3][0] - o[0], r[3][1] - o[1]];
+  const e2: PV = longFirst ? [r[3][0] - o[0], r[3][1] - o[1]] : [r[1][0] - o[0], r[1][1] - o[1]];
+  const at = (a: number, b: number): PV => [o[0] + e1[0] * a + e2[0] * b, o[1] + e1[1] * a + e2[1] * b];
+  const fa = 1.5 / 96, fb = 1.5 / 48; // 1 1/2 in boards
+  const inner = [at(fa, fb), at(1 - fa, fb), at(1 - fa, 1 - fb), at(fa, 1 - fb)];
+  // which half is the first end (north or west)
+  const cA = at(0.25, 0.5), cB = at(0.75, 0.5);
+  const firstIsA = ends[0] === "north" || ends[0] === "south" ? (ends[0] === "north" ? cA[1] < cB[1] : cA[1] > cB[1]) : (ends[0] === "west" ? cA[0] < cB[0] : cA[0] > cB[0]);
+  const halves = bed ? (firstIsA ? [bed.north, bed.south] : [bed.south, bed.north]) : [];
+  const ftPx = s; // px per foot
+  const plants: { id: string; x: number; y: number; R: number; faded: boolean; k: number }[] = [];
+  halves.forEach((sq, h) => {
+    if (!sq.crop) return;
+    const [sp0, sp1] = sq.crop.spacing;
+    const nb = Math.min(8, Math.max(1, Math.floor(48 / sp0))), na = Math.min(8, Math.max(1, Math.floor(48 / sp1)));
+    const cell = Math.min((4 / nb) * ftPx, (4 / na) * ftPx);
+    const R = Math.max(1.4, (cell / 2) * plantStyle(sq.crop.id).size);
+    const a0 = h === 0 ? fa : 0.5, a1 = h === 0 ? 0.5 : 1 - fa;
+    for (let i = 0; i < na; i++) for (let j = 0; j < nb; j++) {
+      const [x, y] = at(a0 + ((i + 0.5) / na) * (a1 - a0), fb + ((j + 0.5) / nb) * (1 - 2 * fb));
+      plants.push({ id: sq.crop.id, x, y, R, faded: sq.lowSun, k: n * 1000 + h * 100 + i * 10 + j });
+    }
+  });
+  plants.sort((p, q) => q.R - p.R);
+  const ePath = (pts: PV[]) => pts.map((p, j) => `${j ? "L" : "M"}${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(" ") + "Z";
+  const tagR = Math.max(6, Math.min(9, ftPx * 0.35));
+  const off = (tagR + 3) / Math.hypot(e1[0], e1[1]);
+  const tagC = at(firstIsA ? -off : 1 + off, 0.5);
+  return (
+    <>
+      <path d={ePath(inner)} fill="url(#pl-soil)" stroke="#10221F" strokeWidth="0.6" />
+      <line x1={at(0.5, fb)[0]} y1={at(0.5, fb)[1]} x2={at(0.5, 1 - fb)[0]} y2={at(0.5, 1 - fb)[1]} stroke="#F4E9D6" strokeOpacity="0.55" strokeWidth="0.8" strokeDasharray="3 2" />
+      <clipPath id={`bedclip-${n}`}><path d={ePath(inner)} /></clipPath>
+      <g clipPath={`url(#bedclip-${n})`}>{plants.map((p) => <Plant key={p.k} id={p.id} cx={p.x} cy={p.y} R={p.R} seed={p.k} faded={p.faded} />)}</g>
+      <circle cx={tagC[0]} cy={tagC[1]} r={tagR} fill="#fff" stroke="#10221F" strokeWidth="1" />
+      <text x={tagC[0]} y={tagC[1] + 3.5} textAnchor="middle" className="sv-t">{n}</text>
+    </>
+  );
+}
+
+/** Plant list: each crop's symbol, name and total plants. */
+function PlantList({ plan }: { plan: Plan }) {
+  const tot = new Map<string, number>();
+  plan.beds.forEach((b) => [b.north, b.south].forEach((q) => { if (q.crop) tot.set(q.crop.id, (tot.get(q.crop.id) ?? 0) + q.plants); }));
+  const ids = CROPS.map((c) => c.id).filter((id) => tot.has(id));
+  return (
+    <ul className="plant-list">
+      {ids.map((id) => {
+        const c = CROPS.find((x) => x.id === id)!;
+        return (
+          <li key={id}>
+            <svg viewBox="-12 -12 24 24" width="22" height="22" aria-hidden="true"><Plant id={id} cx={0} cy={0} R={9} seed={id.length * 97} /></svg>
+            <span>{c.name.split(" /")[0].replace(" (flower)", "")}</span>
+            <b>{tot.get(id)}</b>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 
@@ -284,18 +354,24 @@ export function BuildPlanSheets({ name, garden, beds, ends, plan, choices, onClo
       </div>
       <section className="sheet">
         <h2>Site and planting plan</h2>
-        <div className="sheet-split">
-          <PlanSvg garden={garden} beds={beds} fl={b.fl} kind="site" />
+        <div className="sheet-split planting">
+          <PlanSvg garden={garden} beds={beds} fl={b.fl} kind="site" plan={plan} ends={ends} />
+          <div className="plan-side">
+          <h3 className="plan-h">Plant list</h3>
+          <PlantList plan={plan} />
+          <h3 className="plan-h">By bed</h3>
           <table className="shop plant-table">
             <thead><tr><th>Bed</th><th>{cap(ends[0])} half</th><th>{cap(ends[1])} half</th></tr></thead>
             <tbody>
-              {plan.beds.map((pb) => (
+              {plan.beds.filter((pb) => pb.north.crop || pb.south.crop).map((pb) => (
                 <tr key={pb.n}><td>{pb.n}</td><td>{pb.north.crop ? `${pb.north.crop.name.replace(" (flower)", "")} ×${pb.north.plants}` : "open"}</td><td>{pb.south.crop ? `${pb.south.crop.name.replace(" (flower)", "")} ×${pb.south.plants}` : "open"}</td></tr>
               ))}
             </tbody>
           </table>
+          {plan.beds.some((pb) => !pb.north.crop && !pb.south.crop) && <p className="muted small">Beds not listed are open for now.</p>}
+          </div>
         </div>
-        <p className="sheet-note">{beds.length} beds, 4 × 8 ft, long sides {ends[0] === "north" ? "roughly north to south" : "roughly east to west"}, kept 1½ ft in from the outline.{b.fl ? " Squares are fence posts." : ""}</p>
+        <p className="sheet-note">{beds.length} beds, 4 × 8 ft, long sides {ends[0] === "north" ? "roughly north to south" : "roughly east to west"}, kept 1½ ft in from the outline.{b.fl ? " Squares are fence posts." : ""} Plants are drawn at Extension spacing; crops planted closer than 6 in show as a fill, not one symbol per plant. Paler plants get less sun than they like.</p>
         <TitleBlock no="A-1" title="Site plan" name={name} />
       </section>
       <section className="sheet">
