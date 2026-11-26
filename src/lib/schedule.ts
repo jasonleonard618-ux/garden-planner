@@ -27,11 +27,12 @@ export const mdToDate = (md: string, year: number) => {
  *  - Warm crops go out 3 weeks after the last-frost date (practical margin: half of years still
  *    see a frost after that date). Cool-season transplants go out a week before it, and cool
  *    crops sown in the bed go in 3 weeks before to the frost date.
- *  - Indoor start = plant-out date minus the Rutgers weeks; harden off the week before.
+ *  - Indoor start = plant-out date minus the Rutgers weeks (or the state guide's, when it gives
+ *    its own); harden off the week before.
  *  - Harvest begins after the packet days; warm crops run to the first frost, quick cool crops
  *    about a month.
  */
-export function cropPlan(id: string, lastSpring: string, firstFall: string, year: number): CropPlan | null {
+export function cropPlan(id: string, lastSpring: string, firstFall: string, year: number, weeksOverride?: [number, number]): CropPlan | null {
   const c = CROPS.find((x) => x.id === id);
   const t = TIMING[id];
   if (!c || !t) return null;
@@ -45,7 +46,7 @@ export function cropPlan(id: string, lastSpring: string, firstFall: string, year
   }
   let start: Date;
   if (t.method === "indoors") {
-    const [w0, w1] = t.weeks ?? [6, 8];
+    const [w0, w1] = weeksOverride ?? t.weeks ?? [6, 8];
     p.indoors = { from: add(out, -w1 * 7), to: add(out, -w0 * 7) };
     p.growInside = { from: add(out, -w0 * 7), to: add(out, -7) };
     p.harden = { from: add(out, -7), to: out };

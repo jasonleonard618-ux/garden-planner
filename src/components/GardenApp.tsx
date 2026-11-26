@@ -10,7 +10,8 @@ import type { LngLat, Place, Season, SiteData, SiteObject, SiteProfile, SunStats
 import type { DraftApi, DrawMode } from "./MapView";
 import WindRose from "./WindRose";
 import { Wordmark } from "./Logo";
-import { Checklist, Problems, Timeline, type ToolView } from "./GrowTools";
+import { Checklist, LocalNotes, Problems, Timeline, type ToolView } from "./GrowTools";
+import { guideFor, type RegionGuide } from "@/data/regions";
 import { BuildPlanSheets, BuildStep, type BuildChoices } from "./BuildPlan";
 import { Feedback, listAccountPlans, saveToAccount, SignIn, useSession } from "./Account";
 import { supabase, track } from "@/lib/supabase";
@@ -279,6 +280,7 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
   const bedRows = useMemo(() => (fit ? fit.beds.map((b, i) => ({ n: b.n, sun: bedSuns?.[i] ?? null })) : []), [fit, bedSuns]);
   const bestSun = bedSuns?.length ? Math.max(...bedSuns.map((h) => h ?? 0)) : sunStats?.avgHours ?? null;
   const frost = site.state === "done" ? site.data.frost ?? null : null;
+  const siteState = site.state === "done" ? site.data.state ?? null : null;
   const plan = useMemo(() => planBeds(bedRows, picks), [bedRows, picks]);
   // Frame the garden in the map area beside the panel when moving past step 1.
   const framed = useRef<string>("");
@@ -472,7 +474,7 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
         {view ? (
           <>
             <p className="eyebrow">Grow tools · {TOOL_LABEL[view]}</p>
-            {view === "timeline" && <Timeline picks={picks} frost={frost} onPick={() => go(garden ? 3 : 0)} />}
+            {view === "timeline" && <Timeline picks={picks} frost={frost} state={siteState} onPick={() => go(garden ? 3 : 0)} />}
             {view === "problems" && <Problems />}
             {view === "checklist" && <Checklist frost={frost} />}
             <div className="stepnav">
@@ -711,7 +713,7 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
           />
         )}
         {step === 3 && (
-          <PlantsStep picks={picks} setPicks={setPicks} bestSun={bestSun} frost={frost} kind={kindFilter} setKind={setKindFilter} bedSuns={bedSuns} />
+          <PlantsStep picks={picks} setPicks={setPicks} bestSun={bestSun} frost={frost} kind={kindFilter} setKind={setKindFilter} bedSuns={bedSuns} state={siteState} />
         )}
         {step === 4 && <LayoutStep plan={plan} picks={picks} onPick={() => go(3)} ends={fit?.ends ?? ["north", "south"]} />}
         {step === 5 && garden && fit && <BuildStep garden={garden} beds={fit.beds} choices={build} setChoices={setBuild} onOpen={() => setSheets(true)} />}
@@ -952,10 +954,11 @@ function BedsStep({ fit, cols, opts, setOpts, suns, season, sunBusy }: {
 
 const FIT_LABEL: Record<FitTag, string> = { fits: "Fits", "needs-sun": "Needs more sun", "season-short": "Season too short", fall: "Plant in fall", perennial: "Comes back yearly" };
 
-function PlantsStep({ picks, setPicks, bestSun, frost, kind, setKind, bedSuns }: {
+function PlantsStep({ picks, setPicks, bestSun, frost, kind, setKind, bedSuns, state }: {
   picks: string[]; setPicks: (p: string[]) => void; bestSun: number | null; frost: SiteData["frost"] | null;
-  kind: Kind | "all"; setKind: (k: Kind | "all") => void; bedSuns: (number | null)[] | null;
+  kind: Kind | "all"; setKind: (k: Kind | "all") => void; bedSuns: (number | null)[] | null; state: string | null;
 }) {
+  const guide = guideFor(state);
   const [open, setOpen] = useState<string | null>(null);
   const kinds = Object.keys(KIND_LABEL) as Kind[];
   const list = CROPS.filter((c) => kind === "all" || c.kind === kind);
@@ -975,6 +978,7 @@ function PlantsStep({ picks, setPicks, bestSun, frost, kind, setKind, bedSuns }:
         <p className="warn">We couldn&apos;t find frost dates near you, so season length isn&apos;t checked.</p>
       )}
       {frost && <p className="source">{frost.source}. {frost.stationName}, {fmt(frost.distanceMiles, 0)} mi away. Half of years have a frost after the spring date or before the fall one.</p>}
+      {guide && <p className="source">Varieties and pests to watch come from {guide.extension}.</p>}
       <div className="chips" role="group" aria-label="Filter by type">
         <button className={kind === "all" ? "chip on" : "chip"} aria-pressed={kind === "all"} onClick={() => setKind("all")}>All</button>
         {kinds.map((k) => <button key={k} className={kind === k ? "chip on" : "chip"} aria-pressed={kind === k} onClick={() => setKind(k)}>{KIND_LABEL[k]}</button>)}
@@ -993,7 +997,7 @@ function PlantsStep({ picks, setPicks, bestSun, frost, kind, setKind, bedSuns }:
                 </button>
                 <button className={on ? "btn add on" : "btn add"} onClick={() => toggle(c.id)} aria-pressed={on} aria-label={`${on ? "Remove" : "Add"} ${c.name}`}>{on ? "Added" : "Add"}</button>
               </div>
-              {open === c.id && <CropFacts c={c} bedsOk={bedsOk} beds={bedSuns?.length ?? 0} frost={frost} />}
+              {open === c.id && <CropFacts c={c} bedsOk={bedsOk} beds={bedSuns?.length ?? 0} frost={frost} guide={guide} />}
             </li>
           );
         })}
@@ -1003,7 +1007,7 @@ function PlantsStep({ picks, setPicks, bestSun, frost, kind, setKind, bedSuns }:
   );
 }
 
-function CropFacts({ c, bedsOk, beds, frost }: { c: Crop; bedsOk: number | null; beds: number; frost: SiteData["frost"] | null }) {
+function CropFacts({ c, bedsOk, beds, frost, guide }: { c: Crop; bedsOk: number | null; beds: number; frost: SiteData["frost"] | null; guide: RegionGuide | null }) {
   const pair = PAIRINGS.find((p) => p.a === c.id || p.b === c.id);
   const partner = pair && CROPS.find((x) => x.id === (pair.a === c.id ? pair.b : pair.a));
   return (
@@ -1017,6 +1021,7 @@ function CropFacts({ c, bedsOk, beds, frost }: { c: Crop; bedsOk: number | null;
       <p><b>Goes in:</b> {c.warm ? `after your last frost${frost ? ` (${frost.lastSpring})` : ""}; it can't take frost` : c.start === "fall" ? "in fall" : "early, as a cool-season crop"}{c.start === "transplant" ? ", as plants" : c.start === "sets" ? ", from sets" : c.start === "seed" ? ", sown as seed" : ""}.</p>
       {c.note && <p>{c.note}</p>}
       {pair && partner && <p className="pair"><b>Pairs with {partner.name.toLowerCase()}:</b> {pair.claim} <a className="why" href={pair.source.href} target="_blank" rel="noreferrer">Why?</a></p>}
+      <LocalNotes g={guide} id={c.id} />
     </div>
   );
 }

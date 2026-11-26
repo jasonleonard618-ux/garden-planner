@@ -8,6 +8,7 @@ import { END, START, type Group } from "@/data/checklists";
 import { SRC, type SrcKey } from "@/data/sources";
 import { cropPlan, mdToDate, type CropPlan } from "@/lib/schedule";
 import type { SiteData } from "@/lib/types";
+import { guideFor, type RegionGuide } from "@/data/regions";
 
 export type ToolView = "timeline" | "problems" | "checklist";
 type Frost = NonNullable<SiteData["frost"]>;
@@ -31,11 +32,35 @@ function seasonYear() {
 
 // ---------- timeline ----------
 
-export function Timeline({ picks, frost, onPick }: { picks: string[]; frost: Frost | null; onPick: () => void }) {
+/** A link to one of a state guide's sources. */
+export function RegionLink({ g, k }: { g: RegionGuide; k: string }) {
+  const s = g.sources[k];
+  if (!s) return null;
+  return <a className="why" href={s.href} target="_blank" rel="noreferrer" title={s.label}>Why?</a>;
+}
+
+/** Varieties, pests and timing for one crop from the state guide, or nothing if the state has none. */
+export function LocalNotes({ g, id, timing = true }: { g: RegionGuide | null; id: string; timing?: boolean }) {
+  if (!g) return null;
+  const v = g.varieties[id], pe = g.pests[id], pt = g.pestTiming[id] ?? [], pl = g.planting[id];
+  if (!v && !pe && !pt.length && !pl) return null;
+  return (
+    <div className="local">
+      <p className="eyebrow">In {g.name}</p>
+      {pl && timing && <p className="small"><b>When:</b> {pl.text} <RegionLink g={g} k={pl.src} /></p>}
+      {v && <p className="small"><b>Varieties to try:</b> {v.names.join(", ")}. <RegionLink g={g} k={v.src} /></p>}
+      {pe && <p className="small"><b>Watch for:</b> {pe.list}. <RegionLink g={g} k={pe.src} /></p>}
+      {pt.map((n) => <p key={n.text} className="small">{n.text} <RegionLink g={g} k={n.src} /></p>)}
+    </div>
+  );
+}
+
+export function Timeline({ picks, frost, onPick, state }: { picks: string[]; frost: Frost | null; onPick: () => void; state?: string | null }) {
   const year = seasonYear();
+  const guide = guideFor(state);
   const plans = useMemo(
-    () => (frost ? (picks.map((id) => cropPlan(id, frost.lastSpring, frost.firstFall, year)).filter(Boolean) as CropPlan[]) : []),
-    [picks, frost, year],
+    () => (frost ? (picks.map((id) => cropPlan(id, frost.lastSpring, frost.firstFall, year, guide?.weeks[id]?.weeks)).filter(Boolean) as CropPlan[]) : []),
+    [picks, frost, year, guide],
   );
   const [sel, setSel] = useState(0);
   if (!frost) return <><h1 className="title">From seed to harvest</h1><p className="warn">We need your frost dates for this. Find your yard first, or try again if the climate lookup failed.</p></>;
@@ -54,11 +79,13 @@ export function Timeline({ picks, frost, onPick }: { picks: string[]; frost: Fro
   const p = plans[Math.min(sel, plans.length - 1)];
   const t = TIMING[p.id];
   const c = CROPS.find((x) => x.id === p.id)!;
+  const wk = guide?.weeks[p.id];
 
   return (
     <>
       <h1 className="title">From seed to harvest</h1>
       <p className="lede">Your {year} dates, worked out from your frost dates: last spring frost {fmtD(last)}, first fall frost {fmtD(first)}. <SourceLink k="noaa" /></p>
+      {guide && <p className="small local-lede">Varieties, pests and planting notes use local guidance from {guide.extension}. {guide.general.map((n) => <span key={n.text}>{n.text} <RegionLink g={guide} k={n.src} /> </span>)}</p>}
       <div className="tl" role="table" aria-label="Planting timeline">
         <div className="tl-head" role="row">
           <span />
@@ -94,7 +121,7 @@ export function Timeline({ picks, frost, onPick }: { picks: string[]; frost: Fro
       <section className="tl-detail">
         <h2>{p.name}</h2>
         <dl>
-          {p.indoors && <><dt>Start seeds inside</dt><dd>{span(p.indoors.from, p.indoors.to)}{t.weeks ? ` (${t.weeks[0]} to ${t.weeks[1]} weeks ahead)` : ""}</dd></>}
+          {p.indoors && <><dt>Start seeds inside</dt><dd>{span(p.indoors.from, p.indoors.to)}{wk ? <> ({wk.weeks[0]} to {wk.weeks[1]} weeks ahead{wk.note ? `; ${wk.note}` : ""}) <RegionLink g={guide!} k={wk.src} /></> : t.weeks ? ` (${t.weeks[0]} to ${t.weeks[1]} weeks ahead)` : ""}</dd></>}
           {t.germF && <><dt>Sprouts best at</dt><dd>{t.germF}°F soil{t.germF >= 85 ? "; a heat mat helps" : ""}</dd></>}
           {p.harden && <><dt>Harden off</dt><dd>{span(p.harden.from, p.harden.to)}</dd></>}
           {p.plantOut && <><dt>{p.buy ? "Buy and plant" : "Plant out"}</dt><dd>About {fmtD(p.plantOut)}{c.warm ? ", after frost danger" : ", before the last frost; it handles light frost"}</dd></>}
@@ -103,6 +130,7 @@ export function Timeline({ picks, frost, onPick }: { picks: string[]; frost: Fro
         </dl>
         {p.notes.map((n) => <p key={n} className="small">{n}</p>)}
         <p className="small">{t.tip} <SourceLink k={t.src} /></p>
+        <LocalNotes g={guide} id={p.id} />
       </section>
     </>
   );
