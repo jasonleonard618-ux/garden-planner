@@ -1,5 +1,6 @@
-import GardenApp from "@/components/GardenApp";
+import Home from "@/components/Home";
 
-export default function Home() {
-  return <GardenApp />;
+export default async function Page({ searchParams }: { searchParams: Promise<{ intro?: string }> }) {
+  const { intro } = await searchParams;
+  return <Home skipIntro={intro === "0"} />;
 }

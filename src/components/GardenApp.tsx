@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fmt, measure, ringBbox, ringCenter, slopeAdvice, terrainStats, toMerc, uid } from "@/lib/geo";
@@ -8,12 +9,14 @@ import { deleteSite, downloadSite, listSites, readSiteFile, saveSite } from "@/l
 import type { LngLat, Place, Season, SiteData, SiteObject, SiteProfile, SunStats, SurfaceGrid, Terrain, TerrainStats } from "@/lib/types";
 import type { DrawMode } from "./MapView";
 import WindRose from "./WindRose";
+import { Wordmark } from "./Logo";
 
 const MapView = dynamic(() => import("./MapView"), { ssr: false, loading: () => <div className="map map-loading" /> });
 
 type Grid = SurfaceGrid & { fromLidar: boolean };
 type Load<T> = { state: "idle" } | { state: "loading" } | { state: "error"; message: string } | { state: "done"; data: T };
 
+const STEPS = ["Address", "Sun", "Beds", "Plants", "Layout", "Build", "Save"];
 const SEASONS: Season[] = ["spring", "summer", "fall"];
 const SEASON_SHORT: Record<Season, string> = { spring: "Spring", summer: "Summer", fall: "Late summer" };
 const YEAR = new Date().getFullYear() + (new Date().getMonth() > 8 ? 1 : 0);
@@ -62,7 +65,7 @@ function pointInPoly(x: number, y: number, poly: [number, number][]) {
   return inside;
 }
 
-export default function GardenApp() {
+export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
   // ---------- core state ----------
   const [place, setPlace] = useState<Place | null>(null);
   const [flyTo, setFlyTo] = useState<{ center: LngLat; zoom: number; key: number } | null>(null);
@@ -86,11 +89,19 @@ export default function GardenApp() {
   const [profileName, setProfileName] = useState("");
   const [saved, setSaved] = useState<SiteProfile[]>([]);
   const [toast, setToast] = useState<string | null>(null);
+  const [step, setStep] = useState(0);
+  const panelRef = useRef<HTMLElement>(null);
 
   const [treeForm, setTreeForm] = useState({ heightFt: 30, widthFt: 20, leaves: "deciduous" as "deciduous" | "evergreen" });
   const [structForm, setStructForm] = useState({ heightFt: 6, label: "Fence" });
 
   useEffect(() => setSaved(listSites()), []);
+  useEffect(() => {
+    if (!initialQuery) return;
+    getJson<{ places: Place[] }>(`/api/geocode?q=${encodeURIComponent(initialQuery)}`)
+      .then((d) => (d.places[0] ? choosePlace(d.places[0]) : setToast("We couldn't find that address. Try adding the city and state.")))
+      .catch(() => setToast("Search isn't responding. Please try again."));
+  }, [initialQuery]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(null), 3200);
@@ -252,6 +263,7 @@ export default function GardenApp() {
     setProfileName(p.name);
     setImagery(p.imagery ?? "usgs");
     choosePlace(p.place, { garden: p.garden, objects: p.objects ?? [] });
+    setStep(p.garden ? 1 : 0);
   };
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -259,222 +271,35 @@ export default function GardenApp() {
   const s = site.state === "done" ? site.data : null;
   const mainSoil = s?.soil?.components.find((c) => c.texture) ?? s?.soil?.components[0];
 
+  const reached = [true, !!garden, !!garden, !!garden, !!garden, !!garden, !!place];
+  const go = (i: number) => { if (reached[i]) { setStep(i); setMode("idle"); panelRef.current?.scrollTo({ top: 0 }); } };
+  const nextOk = step < STEPS.length - 1 && reached[step + 1];
+
   return (
     <div className="app">
-      <aside className="panel">
-        <header className="brand">
-          <LeafIcon />
-          <div>
-            <h1>Garden Planner</h1>
-            <p>Step 1 · Map your site</p>
-          </div>
-        </header>
-
-        <Section n={1} title="Find your property" done={!!place}>
-          <AddressSearch onPick={(p) => { setProfileId(uid()); choosePlace(p); }} />
-          {place && <p className="muted small">📍 {place.label}</p>}
-        </Section>
-
-        <Section n={2} title="Outline your garden" done={!!garden} disabled={!place}>
-          {!garden && mode !== "garden" && (
-            <>
-              <p className="muted">Trace the area you want to plant. Tap each corner on the map.</p>
-              <button className="btn primary" onClick={() => setMode("garden")} disabled={!place}>
-                Draw garden outline
-              </button>
-            </>
-          )}
-          {mode === "garden" && <DrawHelp count={draftCount} draftRef={draftRef} onCancel={() => setMode("idle")} />}
-          {garden && measured && mode !== "garden" && (
-            <>
-              <div className="stats">
-                <Stat label="Area" value={`${fmt(measured.areaSqFt)} sq ft`} />
-                <Stat label="Edge length" value={`${fmt(measured.perimeterFt)} ft`} />
-              </div>
-              <p className="muted small">Side lengths are shown on the map. About {fmt(measured.areaSqFt / 32, 0)} raised beds of 4 × 8 ft would fit edge to edge.</p>
-              <div className="row">
-                <button className="btn" onClick={() => setMode("garden")}>Redraw</button>
-                <button className="btn ghost" onClick={() => { setGarden(null); setTerrain({ state: "idle" }); }}>Clear</button>
-              </div>
-            </>
-          )}
-        </Section>
-
-        <Section n={3} title="Sun and shade" done={!!sunStats} disabled={!place}>
-          <div className="tabs" role="tablist">
-            {SEASONS.map((k) => (
-              <button key={k} role="tab" aria-selected={season === k} className={season === k ? "tab on" : "tab"} onClick={() => setSeason(k)}>
-                {SEASON_SHORT[k]}
-              </button>
+      <header className="topbar">
+        <Link className="brand" href="/?intro=0" aria-label="Light & Loam home">
+          <Wordmark />
+        </Link>
+        <nav className="stepbar" aria-label="Steps">
+          <ol>
+            {STEPS.map((label, i) => (
+              <li key={label}>
+                <button
+                  className={`step${i === step ? " on" : ""}${i < step && reached[i] ? " done" : ""}`}
+                  onClick={() => go(i)}
+                  disabled={!reached[i]}
+                  aria-current={i === step ? "step" : undefined}
+                >
+                  <span className="step-n">{i < step && reached[i] ? "✓" : i + 1}</span>
+                  <span className="step-l">{label}</span>
+                </button>
+              </li>
             ))}
-          </div>
-          <p className="muted small">{SEASON_DATES[season].label}</p>
-          {grid.state === "loading" && <Busy text="Loading tree and building heights…" />}
-          {grid.state === "error" && <p className="warn">Couldn&apos;t load height data: {grid.message}</p>}
-          {grid.state === "done" && sunBusy && <Busy text="Tracing the sun across your yard…" />}
-          {grid.state === "done" && !grid.data.fromLidar && (
-            <p className="warn">No lidar survey covers this spot yet, so trees and buildings aren&apos;t included automatically. Add them below and the map will update.</p>
-          )}
-          {sunStats ? (
-            <>
-              <div className="stats">
-                <Stat label="Average direct sun" value={`${fmt(sunStats.avgHours, 1)} hrs/day`} />
-              </div>
-              <SunBar stats={sunStats} />
-              <p className="muted small">{sunAdvice(sunStats)}</p>
-            </>
-          ) : (
-            grid.state === "done" && !garden && <p className="muted small">The colours on the map show direct sun per spot. Outline your garden to get its numbers.</p>
-          )}
-          {overlay && (
-            <label className="check">
-              <input type="checkbox" checked={overlayVisible} onChange={(e) => setOverlayVisible(e.target.checked)} /> Show sun map
-            </label>
-          )}
-
-          <details className="sub">
-            <summary>Fix what the data missed ({objects.length})</summary>
-            <p className="muted small">Add a tree, shed or fence that&apos;s new or missing, or mark something that&apos;s been removed. Sun hours update automatically.</p>
-            {mode === "tree" ? (
-              <div className="draw-help">
-                <p>Tap the centre of the tree on the map.</p>
-                <button className="btn ghost" onClick={() => setMode("idle")}>Cancel</button>
-              </div>
-            ) : mode === "structure" || mode === "clear" ? (
-              <DrawHelp count={draftCount} draftRef={draftRef} onCancel={() => setMode("idle")} what={mode === "clear" ? "the removed area" : "its outline"} />
-            ) : (
-              <div className="obj-forms">
-                <fieldset>
-                  <legend>Tree</legend>
-                  <label>Height <input type="number" min={3} max={150} value={treeForm.heightFt} onChange={(e) => setTreeForm({ ...treeForm, heightFt: +e.target.value })} /> ft</label>
-                  <label>Width <input type="number" min={2} max={100} value={treeForm.widthFt} onChange={(e) => setTreeForm({ ...treeForm, widthFt: +e.target.value })} /> ft</label>
-                  <select value={treeForm.leaves} onChange={(e) => setTreeForm({ ...treeForm, leaves: e.target.value as "deciduous" | "evergreen" })}>
-                    <option value="deciduous">Loses leaves in winter</option>
-                    <option value="evergreen">Evergreen</option>
-                  </select>
-                  <button className="btn" onClick={() => setMode("tree")} disabled={!place}>Place tree</button>
-                </fieldset>
-                <fieldset>
-                  <legend>Building, shed or fence</legend>
-                  <label>Name <input value={structForm.label} onChange={(e) => setStructForm({ ...structForm, label: e.target.value })} /></label>
-                  <label>Height <input type="number" min={1} max={80} value={structForm.heightFt} onChange={(e) => setStructForm({ ...structForm, heightFt: +e.target.value })} /> ft</label>
-                  <button className="btn" onClick={() => setMode("structure")} disabled={!place}>Draw outline</button>
-                </fieldset>
-                <button className="btn ghost" onClick={() => setMode("clear")} disabled={!place}>Mark something as removed</button>
-              </div>
-            )}
-            {objects.length > 0 && (
-              <ul className="obj-list">
-                {objects.map((o) => (
-                  <li key={o.id}>
-                    <span>
-                      {o.type === "tree" ? `🌳 Tree, ${o.heightFt} ft tall, ${o.leaves}` : o.type === "structure" ? `🏠 ${o.label}, ${o.heightFt} ft` : "✂️ Removed area"}
-                    </span>
-                    <button className="link" onClick={() => setObjects((all) => all.filter((x) => x.id !== o.id))}>Remove</button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </details>
-          {grid.state === "done" && grid.data.fromLidar && (
-            <p className="source">Heights from USGS 3DEP lidar ({grid.data.project.replace(/_/g, " ")}, {grid.data.year || "date unknown"}). Sun path from SunCalc.</p>
-          )}
-        </Section>
-
-        <Section n={4} title="Slope and elevation" done={!!tStats} disabled={!garden}>
-          {!garden && <p className="muted small">Outline your garden first.</p>}
-          {terrain.state === "loading" && <Busy text="Checking the ground…" />}
-          {terrain.state === "error" && <p className="warn">Couldn&apos;t load elevation: {terrain.message}</p>}
-          {tStats && (
-            <>
-              <div className="stats">
-                <Stat label="Average slope" value={`${fmt(tStats.avgSlopePct, 1)}%`} />
-                <Stat label="Height change" value={`${fmt(tStats.maxFt - tStats.minFt, 1)} ft`} />
-                <Stat label="Faces" value={tStats.facing ? cap(tStats.facing) : "Level"} />
-              </div>
-              <p className="muted small">{slopeAdvice(tStats.avgSlopePct)}{tStats.facing && ["south", "southeast", "southwest"].includes(tStats.facing) ? " A south-leaning slope warms up early in spring, which is a plus." : ""}</p>
-              <p className="source">Bare-earth elevation from USGS 3DEP. Ground about {fmt(tStats.minFt)}–{fmt(tStats.maxFt)} ft above sea level.</p>
-            </>
-          )}
-          {terrain.state === "done" && !tStats && <p className="muted small">The outline is too small to measure slope. Try a larger area.</p>}
-        </Section>
-
-        <Section n={5} title="Climate, wind and soil" done={site.state === "done"} disabled={!place}>
-          {site.state === "loading" && <Busy text="Looking up climate, wind and soil…" />}
-          {site.state === "error" && <p className="warn">Couldn&apos;t load site facts: {site.message}</p>}
-          {s && (
-            <>
-              <h3>Hardiness zone</h3>
-              {s.zone ? (
-                <p><strong className="big">Zone {s.zone.zone}</strong> <span className="muted">· coldest winter nights average {s.zone.tempRangeF} °F</span></p>
-              ) : (
-                <p className="muted small">Not available for this spot.</p>
-              )}
-
-              <h3>Wind (growing season)</h3>
-              {s.wind ? (
-                <div className="wind">
-                  <WindRose wind={s.wind} />
-                  <div>
-                    <p>Mostly from the <strong>{s.wind.prevailing}</strong>. Strongest winds from the <strong>{s.wind.strongest}</strong>.</p>
-                    <p className="muted small">Calm {fmt(s.wind.calmPercent)}% of the time. A fence, hedge or trellis on the {s.wind.strongest} side shelters tall crops like tomatoes, corn and beans.</p>
-                    <p className="source">{s.wind.stationName} weather station ({s.wind.station}), {fmt(s.wind.distanceMiles, 1)} mi away, {s.wind.period}. Dark = 10 mph and up.</p>
-                  </div>
-                </div>
-              ) : (
-                <p className="muted small">No nearby weather station found.</p>
-              )}
-
-              <h3>Soil</h3>
-              {s.soil && mainSoil ? (
-                <>
-                  <p><strong>{cap(mainSoil.texture ?? mainSoil.name)}</strong>{mainSoil.drainage ? `, ${mainSoil.drainage.toLowerCase()}` : ""}</p>
-                  <p className="muted small">{soilAdvice(mainSoil)}</p>
-                  <p className="source">USDA NRCS soil survey: {s.soil.mapUnit}. Yards are often regraded, so a $20 soil test from your county Extension office is worth doing before planting.</p>
-                </>
-              ) : (
-                <p className="muted small">No soil survey data for this spot.</p>
-              )}
-            </>
-          )}
-        </Section>
-
-        <Section n={6} title="Save this site" done={saved.some((p) => p.id === profileId)} disabled={!place}>
-          <label className="field">
-            Name
-            <input value={profileName} onChange={(e) => setProfileName(e.target.value)} placeholder="Back yard" />
-          </label>
-          <div className="row">
-            <button className="btn primary" onClick={onSave} disabled={!place}>Save</button>
-            <button className="btn" onClick={() => { const p = buildProfile(); if (p) downloadSite(p); }} disabled={!place}>Download file</button>
-          </div>
-          <p className="muted small">Saved on this device for now. Accounts that sync between your phone and computer come later.</p>
-        </Section>
-
-        {saved.length > 0 && (
-          <section className="card saved">
-            <h2>Your saved sites</h2>
-            <ul>
-              {saved.map((p) => (
-                <li key={p.id}>
-                  <button className="link strong" onClick={() => onOpen(p)}>{p.name}</button>
-                  <span className="muted small">{new Date(p.savedAt).toLocaleDateString()}</span>
-                  <button className="link" onClick={() => { deleteSite(p.id); setSaved(listSites()); }}>Delete</button>
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
-        <div className="footer-actions">
-          <button className="link" onClick={() => fileInput.current?.click()}>Open a downloaded site file</button>
-          <input ref={fileInput} type="file" accept="application/json,.json" hidden onChange={async (e) => {
-            const f = e.target.files?.[0];
-            if (!f) return;
-            try { onOpen(await readSiteFile(f)); } catch (err) { setToast(String((err as Error).message)); }
-            e.target.value = "";
-          }} />
-        </div>
-      </aside>
+          </ol>
+        </nav>
+        <span className="step-mobile">Step {step + 1} of {STEPS.length} · {STEPS[step]}</span>
+      </header>
 
       <main className="mapwrap">
         <MapView
@@ -483,7 +308,7 @@ export default function GardenApp() {
           garden={garden}
           objects={objects}
           overlay={overlay}
-          overlayVisible={overlayVisible}
+          overlayVisible={overlayVisible && step >= 1}
           marker={place && !garden ? [place.lon, place.lat] : null}
           mode={mode}
           onRingComplete={onRingComplete}
@@ -491,14 +316,14 @@ export default function GardenApp() {
           draftRef={draftRef}
           onDraftChange={setDraftCount}
         />
-        <div className="map-ui top-left">
-          <div className="seg">
+        <div className="map-ui top-right">
+          <div className="seg glass">
             <button className={imagery === "usgs" ? "on" : ""} onClick={() => setImagery("usgs")}>USGS aerial</button>
             <button className={imagery === "esri" ? "on" : ""} onClick={() => setImagery("esri")}>Esri satellite</button>
           </div>
         </div>
-        {overlay && overlayVisible && (
-          <div className="map-ui bottom-left legend">
+        {overlay && overlayVisible && step >= 1 && (
+          <div className="map-ui bottom-right legend glass">
             <span>Direct sun, {SEASON_SHORT[season].toLowerCase()}</span>
             <div className="ramp" />
             <div className="ramp-labels"><span>0</span><span>2</span><span>4</span><span>6</span><span>8+ hrs</span></div>
@@ -509,31 +334,236 @@ export default function GardenApp() {
             {mode === "tree" ? "Tap the centre of the tree" : draftCount < 3 ? "Tap each corner" : "Tap the first point or press Finish to close the shape"}
           </div>
         )}
-        {!place && (
-          <div className="map-ui center welcome">
-            <h2>Plan your garden from above</h2>
-            <p>Search your address to see your yard, measure a garden spot, and find out how much sun, wind and slope it gets.</p>
-          </div>
-        )}
         {toast && <div className="toast" role="status">{toast}</div>}
       </main>
+
+      <aside className="panel glass" ref={panelRef}>
+        <p className="eyebrow">Step {step + 1} · {STEPS[step]}</p>
+
+        {step === 0 && (
+          <>
+            <h1 className="title">{place ? "Outline your garden" : "Find your yard"}</h1>
+            <p className="lede">
+              {place
+                ? "Trace the area you want to plant. Tap each corner on the map."
+                : "Type your address. We'll pull up a photo of your yard from above and measure the sun it gets."}
+            </p>
+            <AddressSearch initial={initialQuery} onPick={(p) => { setProfileId(uid()); choosePlace(p); }} />
+            {place && <p className="muted small place">{place.label}</p>}
+            {place && !garden && mode !== "garden" && (
+              <button className="btn primary" onClick={() => setMode("garden")}>Draw garden outline</button>
+            )}
+            {mode === "garden" && <DrawHelp count={draftCount} draftRef={draftRef} onCancel={() => setMode("idle")} />}
+            {garden && measured && mode !== "garden" && (
+              <>
+                <div className="stats">
+                  <Stat label="Area" value={`${fmt(measured.areaSqFt)} sq ft`} />
+                  <Stat label="Edge length" value={`${fmt(measured.perimeterFt)} ft`} />
+                </div>
+                <p className="muted small">Side lengths are shown on the map.</p>
+                <div className="row">
+                  <button className="btn" onClick={() => setMode("garden")}>Redraw</button>
+                  <button className="btn ghost" onClick={() => { setGarden(null); setTerrain({ state: "idle" }); }}>Clear</button>
+                </div>
+              </>
+            )}
+            {!place && saved.length > 0 && (
+              <section className="saved">
+                <h2>Pick up where you left off</h2>
+                <ul>
+                  {saved.map((p) => (
+                    <li key={p.id}>
+                      <button className="link strong" onClick={() => onOpen(p)}>{p.name}</button>
+                      <span className="muted small">{new Date(p.savedAt).toLocaleDateString()}</span>
+                      <button className="link" onClick={() => { deleteSite(p.id); setSaved(listSites()); }}>Delete</button>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+            {!place && (
+              <div className="footer-actions">
+                <button className="link" onClick={() => fileInput.current?.click()}>Open a downloaded plan file</button>
+              </div>
+            )}
+          </>
+        )}
+
+        {step === 1 && (
+          <>
+            <h1 className="title">How much sun it gets</h1>
+            <p className="lede">Trees and buildings around you are measured from a government height survey, then we trace the sun across a whole day.</p>
+            <div className="tabs" role="tablist" aria-label="Season">
+              {SEASONS.map((k) => (
+                <button key={k} role="tab" aria-selected={season === k} className={season === k ? "tab on" : "tab"} onClick={() => setSeason(k)}>
+                  {SEASON_SHORT[k]}
+                </button>
+              ))}
+            </div>
+            <p className="muted small">{SEASON_DATES[season].label}</p>
+            {grid.state === "loading" && <Busy text="Measuring trees and buildings near you…" />}
+            {grid.state === "error" && <p className="warn">Couldn&apos;t load height data: {grid.message}</p>}
+            {grid.state === "done" && sunBusy && <Busy text="Tracing the sun across your yard…" />}
+            {grid.state === "done" && !grid.data.fromLidar && (
+              <p className="warn">No height survey covers this spot yet, so trees and buildings aren&apos;t included automatically. Add them under &ldquo;Fix what the data missed&rdquo; and the map will update.</p>
+            )}
+            {sunStats && (
+              <>
+                <div className="stats">
+                  <Stat label="Average direct sun" value={`${fmt(sunStats.avgHours, 1)} hrs/day`} />
+                </div>
+                <SunBar stats={sunStats} />
+                <p className="small">{sunAdvice(sunStats)} <Why href="https://yardandgarden.extension.iastate.edu/faq/which-vegetables-will-grow-partial-shade" /></p>
+              </>
+            )}
+            {overlay && (
+              <label className="check">
+                <input type="checkbox" checked={overlayVisible} onChange={(e) => setOverlayVisible(e.target.checked)} /> Show sun map
+              </label>
+            )}
+
+            <details className="sub">
+              <summary>Fix what the data missed ({objects.length})</summary>
+              <p className="muted small">Add a tree, shed or fence that&apos;s new or missing, or mark something that&apos;s been removed. Sun hours update automatically.</p>
+              {mode === "tree" ? (
+                <div className="draw-help">
+                  <p>Tap the centre of the tree on the map.</p>
+                  <button className="btn ghost" onClick={() => setMode("idle")}>Cancel</button>
+                </div>
+              ) : mode === "structure" || mode === "clear" ? (
+                <DrawHelp count={draftCount} draftRef={draftRef} onCancel={() => setMode("idle")} what={mode === "clear" ? "the removed area" : "its outline"} />
+              ) : (
+                <div className="obj-forms">
+                  <fieldset>
+                    <legend>Tree</legend>
+                    <label>Height <input type="number" min={3} max={150} value={treeForm.heightFt} onChange={(e) => setTreeForm({ ...treeForm, heightFt: +e.target.value })} /> ft</label>
+                    <label>Width <input type="number" min={2} max={100} value={treeForm.widthFt} onChange={(e) => setTreeForm({ ...treeForm, widthFt: +e.target.value })} /> ft</label>
+                    <select aria-label="Leaf type" value={treeForm.leaves} onChange={(e) => setTreeForm({ ...treeForm, leaves: e.target.value as "deciduous" | "evergreen" })}>
+                      <option value="deciduous">Loses leaves in winter</option>
+                      <option value="evergreen">Evergreen</option>
+                    </select>
+                    <button className="btn" onClick={() => setMode("tree")}>Place tree</button>
+                  </fieldset>
+                  <fieldset>
+                    <legend>Building, shed or fence</legend>
+                    <label>Name <input value={structForm.label} onChange={(e) => setStructForm({ ...structForm, label: e.target.value })} /></label>
+                    <label>Height <input type="number" min={1} max={80} value={structForm.heightFt} onChange={(e) => setStructForm({ ...structForm, heightFt: +e.target.value })} /> ft</label>
+                    <button className="btn" onClick={() => setMode("structure")}>Draw outline</button>
+                  </fieldset>
+                  <button className="btn ghost" onClick={() => setMode("clear")}>Mark something as removed</button>
+                </div>
+              )}
+              {objects.length > 0 && (
+                <ul className="obj-list">
+                  {objects.map((o) => (
+                    <li key={o.id}>
+                      <span>{o.type === "tree" ? `Tree, ${o.heightFt} ft tall, ${o.leaves}` : o.type === "structure" ? `${o.label}, ${o.heightFt} ft` : "Removed area"}</span>
+                      <button className="link" onClick={() => setObjects((all) => all.filter((x) => x.id !== o.id))}>Remove</button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </details>
+
+            <details className="sub">
+              <summary>Slope, climate, wind and soil</summary>
+              {terrain.state === "loading" && <Busy text="Checking the ground…" />}
+              {terrain.state === "error" && <p className="warn">Couldn&apos;t load elevation: {terrain.message}</p>}
+              {tStats && (
+                <>
+                  <h3>Slope</h3>
+                  <div className="stats">
+                    <Stat label="Average slope" value={`${fmt(tStats.avgSlopePct, 1)}%`} />
+                    <Stat label="Height change" value={`${fmt(tStats.maxFt - tStats.minFt, 1)} ft`} />
+                    <Stat label="Faces" value={tStats.facing ? cap(tStats.facing) : "Level"} />
+                  </div>
+                  <p className="muted small">{slopeAdvice(tStats.avgSlopePct)}{tStats.facing && ["south", "southeast", "southwest"].includes(tStats.facing) ? " A south-leaning slope warms up early in spring, which is a plus." : ""}</p>
+                  <p className="source">Bare-earth elevation from USGS 3DEP. Ground about {fmt(tStats.minFt)}–{fmt(tStats.maxFt)} ft above sea level.</p>
+                </>
+              )}
+              {site.state === "loading" && <Busy text="Looking up climate, wind and soil…" />}
+              {site.state === "error" && <p className="warn">Couldn&apos;t load site facts: {site.message}</p>}
+              {s && (
+                <>
+                  <h3>Hardiness zone</h3>
+                  {s.zone ? (
+                    <p><strong className="big">Zone {s.zone.zone}</strong> <span className="muted">· coldest winter nights average {s.zone.tempRangeF} °F</span></p>
+                  ) : (
+                    <p className="muted small">Not available for this spot.</p>
+                  )}
+                  <h3>Wind (growing season)</h3>
+                  {s.wind ? (
+                    <div className="wind">
+                      <WindRose wind={s.wind} />
+                      <div>
+                        <p>Mostly from the <strong>{s.wind.prevailing}</strong>. Strongest from the <strong>{s.wind.strongest}</strong>.</p>
+                        <p className="muted small">Calm {fmt(s.wind.calmPercent)}% of the time. A fence, hedge or trellis on the {s.wind.strongest} side shelters tall crops like tomatoes, corn and beans.</p>
+                        <p className="source">{s.wind.stationName} weather station ({s.wind.station}), {fmt(s.wind.distanceMiles, 1)} mi away, {s.wind.period}. Dark = 10 mph and up.</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="muted small">No nearby weather station found.</p>
+                  )}
+                  <h3>Soil</h3>
+                  {s.soil && mainSoil ? (
+                    <>
+                      <p><strong>{cap(mainSoil.texture ?? mainSoil.name)}</strong>{mainSoil.drainage ? `, ${mainSoil.drainage.toLowerCase()}` : ""}</p>
+                      <p className="muted small">{soilAdvice(mainSoil)}</p>
+                      <p className="source">USDA NRCS soil survey: {s.soil.mapUnit}. Yards are often regraded, so a soil test from your county Extension office is worth doing before planting.</p>
+                    </>
+                  ) : (
+                    <p className="muted small">No soil survey data for this spot.</p>
+                  )}
+                </>
+              )}
+            </details>
+            {grid.state === "done" && grid.data.fromLidar && (
+              <p className="source">Heights from USGS 3DEP lidar ({grid.data.project.replace(/_/g, " ")}, {grid.data.year || "date unknown"}). Sun path from SunCalc.</p>
+            )}
+          </>
+        )}
+
+        {step >= 2 && step <= 5 && (
+          <ComingNext step={step} bedsFit={measured ? Math.floor(measured.areaSqFt / 32 / 2) : 0} />
+        )}
+
+        {step === 6 && (
+          <>
+            <h1 className="title">Save your plan</h1>
+            <p className="lede">Give it a name so you can come back to it.</p>
+            <label className="field">
+              Name
+              <input value={profileName} onChange={(e) => setProfileName(e.target.value)} placeholder="Back yard" />
+            </label>
+            <div className="row">
+              <button className="btn primary" onClick={onSave} disabled={!place}>Save</button>
+              <button className="btn" onClick={() => { const p = buildProfile(); if (p) downloadSite(p); }} disabled={!place}>Download file</button>
+            </div>
+            <p className="muted small">Saved in this browser for now. Free accounts that sync between your phone and computer come in a later update.</p>
+          </>
+        )}
+
+        <input ref={fileInput} type="file" accept="application/json,.json" hidden onChange={async (e) => {
+          const f = e.target.files?.[0];
+          if (!f) return;
+          try { onOpen(await readSiteFile(f)); } catch (err) { setToast(String((err as Error).message)); }
+          e.target.value = "";
+        }} />
+
+        <div className="stepnav">
+          {step > 0 ? <button className="btn ghost" onClick={() => go(step - 1)}>Back</button> : <span />}
+          {step < STEPS.length - 1 && (
+            <button className="btn primary pill" onClick={() => go(step + 1)} disabled={!nextOk}>
+              Next: {STEPS[step + 1]} →
+            </button>
+          )}
+        </div>
+      </aside>
     </div>
   );
 }
 
 // ---------- small pieces ----------
-
-function Section({ n, title, done, disabled, children }: { n: number; title: string; done?: boolean; disabled?: boolean; children: React.ReactNode }) {
-  return (
-    <section className={`card${disabled ? " disabled" : ""}`}>
-      <h2>
-        <span className={done ? "num done" : "num"}>{done ? "✓" : n}</span>
-        {title}
-      </h2>
-      {children}
-    </section>
-  );
-}
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
@@ -597,20 +627,57 @@ function soilAdvice(c: { texture: string | null; drainage: string | null; ph: nu
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
-function LeafIcon() {
+function Why({ href }: { href: string }) {
+  return <a className="why" href={href} target="_blank" rel="noreferrer">Why?</a>;
+}
+
+const COMING: Record<number, { title: string; body: string; bullets: string[] }> = {
+  2: {
+    title: "Fit your raised beds",
+    body: "Next, the app lays out 4 × 8 ft beds inside your outline, with paths wide enough for a wheelbarrow, and shows the sun hours for each bed.",
+    bullets: ["Beds run north to south so they shade each other less", "Each bed gets its own sun number", "Turn any column into a walkway"],
+  },
+  3: {
+    title: "Choose what to grow",
+    body: "A catalog of common vegetables, herbs and fruit, each checked against your sun, your frost dates and your season length.",
+    bullets: ["Tags like Fits, Needs more sun, Season too short", "Filter by what your family eats", "Every claim links to its Extension source"],
+  },
+  4: {
+    title: "Lay out each bed",
+    body: "Plants are placed bed by bed, with the sun lovers in your sunniest beds. Pairings are only called helpful when trials back them.",
+    bullets: ["Spacing from Extension guides", "Tall crops on the north side", "A seed-to-harvest timeline for your dates"],
+  },
+  5: {
+    title: "Preview the build",
+    body: "See what it takes to build: lumber, soil, a critter fence and drip watering, each in good, better and best options with rough costs.",
+    bullets: ["Cut list and shopping list", "Fence matched to the animals you have", "The full build plan comes with the paid plan"],
+  },
+};
+
+function ComingNext({ step, bedsFit }: { step: number; bedsFit: number }) {
+  const c = COMING[step];
   return (
-    <svg width="34" height="34" viewBox="0 0 34 34" aria-hidden>
-      <circle cx="17" cy="17" r="17" fill="#2f4a3a" />
-      <path d="M10 23c0-8 6-13 15-13-1 9-6 14-13 14l-2 2" fill="none" stroke="#cfe3b8" strokeWidth="2" strokeLinecap="round" />
-      <path d="M12 22c3-4 6-6 9-8" fill="none" stroke="#cfe3b8" strokeWidth="1.6" strokeLinecap="round" />
-    </svg>
+    <>
+      <h1 className="title">{c.title}</h1>
+      <p className="badge">Coming in the next update</p>
+      <p className="lede">{c.body}</p>
+      {step === 2 && bedsFit > 0 && (
+        <div className="stats">
+          <Stat label="Beds that should fit, with paths" value={`About ${bedsFit}`} />
+        </div>
+      )}
+      <ul className="bullets">
+        {c.bullets.map((b) => <li key={b}>{b}</li>)}
+      </ul>
+      <p className="muted small">You can skip ahead and save your yard now. Your outline and sun study will carry over.</p>
+    </>
   );
 }
 
 // ---------- address search ----------
 
-function AddressSearch({ onPick }: { onPick: (p: Place) => void }) {
-  const [q, setQ] = useState("");
+function AddressSearch({ onPick, initial = "" }: { onPick: (p: Place) => void; initial?: string }) {
+  const [q, setQ] = useState(initial);
   const [items, setItems] = useState<Place[]>([]);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
