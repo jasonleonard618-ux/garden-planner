@@ -421,3 +421,18 @@ a.btn { text-decoration: none; display: inline-block; }
   .sheet { box-shadow: none; width: 100%; height: 7.7in; aspect-ratio: auto; break-after: page; margin: 0; }
   .sheet.flow { height: auto; min-height: 7.7in; break-after: auto; }
 }
+.notice { background: #FFF3E0; border: 1px solid #F6D2A8; border-radius: 14px; padding: 10px 12px; font-size: 13px; }
+.notice p { margin: 0 0 4px; }
+.notice ul { margin: 0; padding-left: 18px; display: grid; gap: 2px; }
+.notfound { display: grid; gap: 6px; margin-top: 8px; }
+.notfound p { margin: 0; }
+.near { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.near .link.strong { text-align: left; }
+.feedback { position: relative; flex: none; }
+.feedback-pop { position: absolute; right: 0; top: 44px; width: 320px; padding: 14px; border-radius: 16px; display: grid; gap: 8px; z-index: 6; color: var(--ink); }
+.feedback-pop p { margin: 0; }
+.feedback-pop textarea, .feedback-pop input { width: 100%; border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px; font: inherit; background: #fff; resize: vertical; }
+.signin { display: grid; gap: 8px; background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 12px; }
+.signin p { margin: 0; }
+.btn.google { background: #fff; border-color: #C9D2CF; }
+@media (max-width: 760px) { .feedback-pop { position: fixed; left: 8px; right: 8px; top: 64px; width: auto; } }

@@ -12,6 +12,8 @@ import WindRose from "./WindRose";
 import { Wordmark } from "./Logo";
 import { Checklist, Problems, Timeline, type ToolView } from "./GrowTools";
 import { BuildPlanSheets, BuildStep, type BuildChoices } from "./BuildPlan";
+import { Feedback, listAccountPlans, saveToAccount, SignIn, useSession } from "./Account";
+import { supabase, track } from "@/lib/supabase";
 import { bedSun, DEFAULT_BEDS, fitBeds, type BedOptions } from "@/lib/beds";
 import { planBeds, type Square } from "@/lib/layout";
 import { CROPS, cropFit, KIND_LABEL, PAIRINGS, plantsPerSquare, SOURCES, SUN_PRACTICAL, type Crop, type FitTag, type Kind } from "@/data/crops";
@@ -101,6 +103,12 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
   const [view, setView] = useState<ToolView | null>(null);
   const [build, setBuild] = useState<BuildChoices>({ bed: "better", fence: "better", drip: true });
   const [sheets, setSheets] = useState(false);
+  const session = useSession();
+  const [cloud, setCloud] = useState<SiteProfile[]>([]);
+  useEffect(() => { if (session) listAccountPlans().then(setCloud).catch(() => {}); else setCloud([]); }, [session]);
+  useEffect(() => { track("step_reached", String(step + 1)); }, [step]);
+  useEffect(() => { if (view) track("tool_opened", view); }, [view]);
+  useEffect(() => { if (sheets) track("build_plan_opened"); }, [sheets]);
   const [menu, setMenu] = useState(false);
   const [kindFilter, setKindFilter] = useState<Kind | "all">("all");
   const panelRef = useRef<HTMLElement>(null);
@@ -109,12 +117,6 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
   const [structForm, setStructForm] = useState({ heightFt: 6, label: "Fence" });
 
   useEffect(() => setSaved(listSites()), []);
-  useEffect(() => {
-    if (!initialQuery) return;
-    getJson<{ places: Place[] }>(`/api/geocode?q=${encodeURIComponent(initialQuery)}`)
-      .then((d) => (d.places[0] ? choosePlace(d.places[0]) : setToast("We couldn't find that address. Try adding the city and state.")))
-      .catch(() => setToast("Search isn't responding. Please try again."));
-  }, [initialQuery]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(null), 3200);
@@ -163,6 +165,11 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
     setMode("idle");
   };
   const onPoint = (p: LngLat) => {
+    if (mode === "pin") {
+      setProfileId(uid());
+      choosePlace({ label: `Dropped pin, ${p[1].toFixed(5)}, ${p[0].toFixed(5)}`, lat: p[1], lon: p[0] });
+      return;
+    }
     if (mode !== "tree") return;
     setObjects((o) => [...o, { id: uid(), type: "tree", at: p, ...treeForm }]);
     setMode("idle");
@@ -301,12 +308,23 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
       },
     };
 
-  const onSave = () => {
+  const onSave = async () => {
     const p = buildProfile();
     if (!p) return;
     saveSite(p);
     setSaved(listSites());
-    setToast(`Saved “${p.name}” on this device`);
+    if (session) {
+      try {
+        await saveToAccount(p, session.user.id);
+        setCloud(await listAccountPlans());
+        setToast(`Saved “${p.name}” to your account`);
+      } catch {
+        setToast(`Saved “${p.name}” in this browser. Your account didn't respond, so try again later.`);
+      }
+    } else {
+      track("plan_saved", "browser");
+      setToast(`Saved “${p.name}” in this browser`);
+    }
   };
   const onOpen = (p: SiteProfile) => {
     setProfileId(p.id);
@@ -352,6 +370,7 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
           </ol>
         </nav>
         <span className="step-mobile">{view ? TOOL_LABEL[view] : `Step ${step + 1} of ${STEPS.length} · ${STEPS[step]}`}</span>
+        <Feedback step={view ?? STEPS[step]} />
         <div className="tools-menu">
           <button className={`tools-btn${view ? " on" : ""}`} onClick={() => setMenu(!menu)} aria-expanded={menu} aria-haspopup="menu">Grow tools ▾</button>
           {menu && (
@@ -396,7 +415,7 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
         )}
         {drawing && (
           <div className="map-ui top-center hint">
-            {mode === "tree" ? "Tap the centre of the tree" : draftCount < 3 ? "Tap each corner" : "Tap the first point or press Finish to close the shape"}
+            {mode === "pin" ? "Tap your yard" : mode === "tree" ? "Tap the centre of the tree" : draftCount < 3 ? "Tap each corner" : "Tap the first point or press Finish to close the shape"}
           </div>
         )}
         {toast && <div className="toast" role="status">{toast}</div>}
@@ -425,7 +444,8 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
                 ? "Trace the area you want to plant. Tap each corner on the map."
                 : "Type your address. We'll pull up a photo of your yard from above and measure the sun it gets."}
             </p>
-            <AddressSearch initial={initialQuery} onPick={(p) => { setProfileId(uid()); choosePlace(p); }} />
+            <AddressSearch initial={initialQuery} onPick={(p) => { setProfileId(uid()); choosePlace(p); }} onDropPin={() => setMode("pin")} />
+            {mode === "pin" && <div className="draw-help"><p>Tap your yard on the map. Zoom in first if you need to.</p><button className="btn ghost" onClick={() => setMode("idle")}>Cancel</button></div>}
             {place && <p className="muted small place">{place.label}</p>}
             {place && !garden && mode !== "garden" && (
               <button className="btn primary" onClick={() => setMode("garden")}>Draw garden outline</button>
@@ -479,7 +499,8 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
             </div>
             <p className="muted small">{SEASON_DATES[season].label}</p>
             {grid.state === "loading" && <Busy text="Measuring trees and buildings near you…" />}
-            {grid.state === "error" && <p className="warn">Couldn&apos;t load height data: {grid.message}</p>}
+            {(grid.state === "loading" || (grid.state === "done" && sunBusy)) && <p className="muted small">This takes 10 to 30 seconds. We read the government height survey for your block, then trace the sun every few minutes from sunrise to sunset.</p>}
+            {grid.state === "error" && <p className="warn">Couldn&apos;t load height data ({grid.message}). <button className="link" onClick={() => place && loadGrid(garden ? ringCenter(garden) : [place.lon, place.lat])}>Try again</button></p>}
             {grid.state === "done" && sunBusy && <Busy text="Tracing the sun across your yard…" />}
             {grid.state === "done" && !grid.data.fromLidar && (
               <p className="warn">No height survey covers this spot yet, so trees and buildings aren&apos;t included automatically. Add them under &ldquo;Fix what the data missed&rdquo; and the map will update.</p>
@@ -491,6 +512,16 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
                 </div>
                 <SunBar stats={sunStats} />
                 <p className="small">{sunAdvice(sunStats)} <Why href="https://yardandgarden.extension.iastate.edu/faq/which-vegetables-will-grow-partial-shade" /></p>
+                {sunStats.full < 3 && (
+                  <div className="notice">
+                    <p><b>No part of this outline gets 6 hours of sun{season === "summer" ? "" : ` in ${SEASON_SHORT[season].toLowerCase()}`}.</b> Tomatoes, peppers and squash won&apos;t do well here. You can:</p>
+                    <ul>
+                      <li>Grow leafy greens, which manage with 3 to 4 hours.</li>
+                      <li>Put fruiting crops in large pots in your sunniest spot.</li>
+                      <li><button className="link" onClick={() => go(0)}>Outline a different spot</button> and compare.</li>
+                    </ul>
+                  </div>
+                )}
               </>
             )}
             {overlay && (
@@ -624,7 +655,28 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
               <button className="btn primary" onClick={onSave} disabled={!place}>Save</button>
               <button className="btn" onClick={() => { const p = buildProfile(); if (p) downloadSite(p); }} disabled={!place}>Download file</button>
             </div>
-            <p className="muted small">Saved in this browser for now. Free accounts that sync between your phone and computer come in a later update.</p>
+            {supabase ? (
+              session ? (
+                <p className="muted small">Signed in as {session.user.email}. Plans save to your account and this browser. <button className="link" onClick={() => supabase!.auth.signOut()}>Sign out</button></p>
+              ) : (
+                <SignIn />
+              )
+            ) : (
+              <p className="muted small">Saved in this browser for this test version. Free accounts that sync between phone and computer switch on when the app goes live.</p>
+            )}
+            {cloud.length > 0 && (
+              <section className="saved">
+                <h2>Your plans</h2>
+                <ul>
+                  {cloud.map((p) => (
+                    <li key={p.id}>
+                      <button className="link strong" onClick={() => onOpen(p)}>{p.name}</button>
+                      <span className="muted small">{new Date(p.savedAt).toLocaleDateString()}</span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
           </>
         )}
 
@@ -763,6 +815,11 @@ function BedsStep({ fit, cols, opts, setOpts, suns, season, sunBusy }: {
             ))}
           </div>
         </>
+      )}
+      {suns && n > 0 && full === 0 && (
+        <div className="notice">
+          <p><b>None of these beds gets 6 hours of sun.</b> Plan on leafy greens, roots and herbs here, and grow tomatoes or peppers in large pots in your sunniest spot.</p>
+        </div>
       )}
       {suns && n > 0 && (
         <>
@@ -936,12 +993,13 @@ function BedSvg({ north, south }: { north: Square; south: Square }) {
 
 // ---------- address search ----------
 
-function AddressSearch({ onPick, initial = "" }: { onPick: (p: Place) => void; initial?: string }) {
+function AddressSearch({ onPick, initial = "", onDropPin }: { onPick: (p: Place) => void; initial?: string; onDropPin: () => void }) {
   const [q, setQ] = useState(initial);
   const [items, setItems] = useState<Place[]>([]);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const [near, setNear] = useState<Place[] | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const onChange = (v: string) => {
@@ -967,20 +1025,30 @@ function AddressSearch({ onPick, initial = "" }: { onPick: (p: Place) => void; i
     onPick(p);
   };
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!q.trim()) return;
+  const search = async (text: string) => {
+    if (!text.trim()) return;
     setBusy(true);
+    setNear(null);
+    setMsg(null);
     try {
-      const d = await getJson<{ places: Place[] }>(`/api/geocode?q=${encodeURIComponent(q)}`);
+      const d = await getJson<{ places: Place[] }>(`/api/geocode?q=${encodeURIComponent(text)}`);
       if (d.places[0]) pick(d.places[0]);
-      else setMsg("No match. Try the full street address with city and state.");
+      else {
+        setMsg("We couldn't find that address.");
+        const s2 = await getJson<{ places: Place[] }>(`/api/suggest?q=${encodeURIComponent(text)}`).catch(() => ({ places: [] as Place[] }));
+        setNear(s2.places.slice(0, 4));
+      }
     } catch {
       setMsg("Search isn't responding. Please try again.");
     } finally {
       setBusy(false);
     }
   };
+  const submit = (e: React.FormEvent) => { e.preventDefault(); search(q); };
+  const ran = useRef(false);
+  useEffect(() => {
+    if (initial && !ran.current) { ran.current = true; search(initial); }
+  }, [initial]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <form className="search" onSubmit={submit} autoComplete="off">
@@ -1005,7 +1073,17 @@ function AddressSearch({ onPick, initial = "" }: { onPick: (p: Place) => void; i
           ))}
         </ul>
       )}
-      {msg && <p className="warn small">{msg}</p>}
+      {msg && (
+        <div className="notfound">
+          <p className="warn small">{msg}{near && near.length ? " Is it one of these?" : ""}</p>
+          {near && near.length > 0 && (
+            <ul className="near">
+              {near.map((p, i) => <li key={i}><button type="button" className="link strong" onClick={() => pick(p)}>{p.label}</button></li>)}
+            </ul>
+          )}
+          {near && <p className="small">Or <button type="button" className="link" onClick={() => { setMsg(null); setNear(null); onDropPin(); }}>drop a pin on your yard</button>. New homes often aren&apos;t in the address database yet.</p>}
+        </div>
+      )}
     </form>
   );
 }

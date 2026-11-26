@@ -7,7 +7,7 @@ import { useEffect, useRef } from "react";
 import { closeRing, fmt, measure } from "@/lib/geo";
 import type { LngLat, SiteObject } from "@/lib/types";
 
-export type DrawMode = "idle" | "garden" | "structure" | "clear" | "tree";
+export type DrawMode = "idle" | "garden" | "structure" | "clear" | "tree" | "pin";
 
 type Props = {
   flyTo: { center: LngLat; zoom: number; key: number; padLeft?: number; padBottom?: number } | null;
@@ -101,7 +101,7 @@ export default function MapView(props: Props) {
     m.on("click", (e) => {
       const p = latest.current;
       const ll: LngLat = [e.lngLat.lng, e.lngLat.lat];
-      if (p.mode === "tree") return p.onPoint(ll);
+      if (p.mode === "tree" || p.mode === "pin") return p.onPoint(ll);
       if (p.mode === "idle") return;
       const pts = draft.current;
       if (pts.length >= 3) {
@@ -112,13 +112,13 @@ export default function MapView(props: Props) {
       renderDraft();
     });
     m.on("dblclick", (e) => {
-      if (latest.current.mode !== "idle" && latest.current.mode !== "tree") {
+      if (latest.current.mode !== "idle" && latest.current.mode !== "tree" && latest.current.mode !== "pin") {
         e.preventDefault();
         finish();
       }
     });
     m.on("mousemove", (e) => {
-      if (latest.current.mode === "idle" || latest.current.mode === "tree" || !draft.current.length) return;
+      if (latest.current.mode === "idle" || latest.current.mode === "tree" || latest.current.mode === "pin" || !draft.current.length) return;
       renderDraft([e.lngLat.lng, e.lngLat.lat]);
     });
 
