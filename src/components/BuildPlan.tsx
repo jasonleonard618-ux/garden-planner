@@ -41,18 +41,27 @@ export function BuildStep({ garden, beds, choices, setChoices, onOpen }: {
       <h1 className="title">Preview the build</h1>
       <p className="lede">Pick a level for the beds and the fence. Quantities come from your layout; prices are rough, so check your local store.</p>
       <h3>Beds</h3>
-      <div className="tabs" role="radiogroup" aria-label="Bed level">
+      <div className="tiers" role="radiogroup" aria-label="Bed level">
         {(Object.keys(BED_TIERS) as BedTier[]).map((k) => (
-          <button key={k} role="radio" aria-checked={choices.bed === k} className={choices.bed === k ? "tab on" : "tab"} onClick={() => setChoices({ ...choices, bed: k })}>{BED_TIERS[k].name}</button>
+          <button key={k} role="radio" aria-checked={choices.bed === k} className={choices.bed === k ? "tier on" : "tier"} onClick={() => setChoices({ ...choices, bed: k })}>
+            <BedTierArt tier={k} />
+            <b>{BED_TIERS[k].name}</b>
+            <small>{Math.round(BED_TIERS[k].courses * 9.25)} in tall{BED_TIERS[k].cap ? ", seat cap" : ""}</small>
+          </button>
         ))}
       </div>
       <p className="small">{BED_TIERS[choices.bed].summary}{choices.bed !== "good" && <span className="label-pc">practical choice</span>}</p>
       <h3>Critter fence</h3>
-      <div className="tabs" role="radiogroup" aria-label="Fence level">
-        {(["none", "good", "better", "best", "excellent"] as FenceTier[]).map((k) => (
-          <button key={k} role="radio" aria-checked={choices.fence === k} className={choices.fence === k ? "tab on" : "tab"} onClick={() => setChoices({ ...choices, fence: k })}>{k === "none" ? "None" : FENCE_TIERS[k].name}</button>
+      <div className="tiers four" role="radiogroup" aria-label="Fence level">
+        {(["good", "better", "best", "excellent"] as Tier[]).map((k) => (
+          <button key={k} role="radio" aria-checked={choices.fence === k} className={choices.fence === k ? "tier on" : "tier"} onClick={() => setChoices({ ...choices, fence: k })}>
+            <FenceTierArt tier={k} />
+            <b>{FENCE_TIERS[k].name}</b>
+            <small>{FENCE_TIERS[k].heightIn / 12} ft · {FENCE_TIERS[k].keeps.split(",")[0].replace(" plus the above", "")}</small>
+          </button>
         ))}
       </div>
+      <label className="check small"><input type="checkbox" checked={choices.fence === "none"} onChange={(e) => setChoices({ ...choices, fence: e.target.checked ? "none" : "better" })} /> No fence</label>
       {choices.fence !== "none" && b.fl && (
         <>
           <p className="small"><b>Keeps out: {FENCE_TIERS[choices.fence].keeps}.</b> {FENCE_TIERS[choices.fence].summary} <SourceLink k={FENCE_TIERS[choices.fence].src === "uga" ? "ugaFence" : "practical"} /></p>
@@ -74,6 +83,79 @@ export function BuildStep({ garden, beds, choices, setChoices, onOpen }: {
       <button className="btn primary" onClick={onOpen}>Open the build plan</button>
       <p className="muted small">Drawings, cut lists and the shopping list, ready to print or save as a PDF. Free during the pilot.</p>
     </>
+  );
+}
+
+// ---------- tier comparison drawings (build preview) ----------
+
+const INK = "#10221F", WOOD = "#F4EFE6", WOOD2 = "#E9DFCF", CORAL = "#FF6F47";
+
+/** End view of a bed at each level, drawn to one scale so the height difference shows. */
+function BedTierArt({ tier }: { tier: BedTier }) {
+  const t = BED_TIERS[tier];
+  const s = 2.6; // px per inch
+  const W = 48 * s * 0.75, course = 9.25 * s, base = 70;
+  const h = t.courses * course;
+  const x0 = (130 - W) / 2;
+  return (
+    <svg viewBox="0 0 130 82" width="100%" aria-hidden="true">
+      <line x1="4" y1={base} x2="126" y2={base} stroke={INK} strokeWidth="1" />
+      {/* soil */}
+      <rect x={x0 + 4} y={base - h + 6} width={W - 8} height={h - 6} fill="#6B4F3A" />
+      {Array.from({ length: t.courses }, (_, i) => (
+        <g key={i}>
+          <rect x={x0 - 4} y={base - (i + 1) * course} width="4" height={course} fill={WOOD} stroke={INK} strokeWidth="0.8" />
+          <rect x={x0 + W} y={base - (i + 1) * course} width="4" height={course} fill={WOOD} stroke={INK} strokeWidth="0.8" />
+        </g>
+      ))}
+      {t.liner && <><line x1={x0 + 0.8} y1={base - h + 2} x2={x0 + 0.8} y2={base} stroke={CORAL} strokeWidth="1.6" /><line x1={x0 + W - 0.8} y1={base - h + 2} x2={x0 + W - 0.8} y2={base} stroke={CORAL} strokeWidth="1.6" /></>}
+      {t.cap && <rect x={x0 - 10} y={base - h - 4} width={W + 20} height="4" fill={WOOD2} stroke={INK} strokeWidth="0.8" />}
+      {/* height mark, left of the bed */}
+      <line x1={x0 - 16} y1={base - h} x2={x0 - 16} y2={base} stroke={INK} strokeWidth="0.8" />
+      <line x1={x0 - 19} y1={base - h} x2={x0 - 13} y2={base - h} stroke={INK} strokeWidth="0.8" />
+    </svg>
+  );
+}
+
+/** One fence bay at each level, all to one scale (8 ft tall at most), ground line and apron shown. */
+function FenceTierArt({ tier }: { tier: Tier }) {
+  const t = FENCE_TIERS[tier];
+  const s = 0.62; // px per inch
+  const ground = 72, h = t.heightIn * s, x0 = 22, x1 = 108;
+  const meshH = tier === "good" ? h : tier === "better" ? h : 24 * s;
+  return (
+    <svg viewBox="0 0 130 82" width="100%" aria-hidden="true">
+      {/* scale ticks every 2 ft */}
+      {[2, 4, 6, 8].map((ft) => <line key={ft} x1="6" y1={ground - ft * 12 * s} x2="10" y2={ground - ft * 12 * s} stroke="#9AA9A5" strokeWidth="0.8" />)}
+      <line x1="8" y1={ground} x2="8" y2={ground - 96 * s} stroke="#9AA9A5" strokeWidth="0.8" />
+      {/* apron along the ground, outside */}
+      <line x1={x0 - 14} y1={ground} x2={x1 + 2} y2={ground} stroke={INK} strokeWidth="1" />
+      <line x1={x0 - 14} y1={ground + 2.5} x2={x0} y2={ground + 2.5} stroke={CORAL} strokeWidth="2" />
+      {tier === "excellent" ? (
+        <>
+          {/* cattle-panel bay with kickboard, deer wires above */}
+          <rect x={x0} y={ground - 52 * s} width={x1 - x0} height={52 * s} fill="none" stroke={INK} strokeWidth="1.2" />
+          {Array.from({ length: 7 }, (_, i) => <line key={i} x1={x0 + ((x1 - x0) / 7) * i} y1={ground - 52 * s} x2={x0 + ((x1 - x0) / 7) * i} y2={ground} stroke={INK} strokeWidth="0.5" />)}
+          {Array.from({ length: 5 }, (_, i) => <line key={i} x1={x0} y1={ground - 52 * s + i * 8} x2={x1} y2={ground - 52 * s + i * 8} stroke={INK} strokeWidth="0.5" />)}
+          <rect x={x0} y={ground - 8 * s} width={x1 - x0} height={8 * s} fill={WOOD2} stroke={INK} strokeWidth="0.8" />
+          {[66, 80, 94].map((inch) => <line key={inch} x1={x0} y1={ground - inch * s} x2={x1} y2={ground - inch * s} stroke={INK} strokeWidth="0.6" />)}
+        </>
+      ) : (
+        <>
+          <rect x={x0} y={ground - meshH} width={x1 - x0} height={meshH} fill="url(#mesh)" stroke={INK} strokeWidth="0.6" />
+          {tier === "best" && <rect x={x0} y={ground - h} width={x1 - x0} height={h - meshH} fill="url(#net)" />}
+          {tier === "better" && <line x1={x0} y1={ground - h} x2={x0 - 8} y2={ground - h - 8} stroke={INK} strokeWidth="0.8" />}
+          {tier === "better" && <line x1={x1} y1={ground - h} x2={x1 - 8} y2={ground - h - 8} stroke={INK} strokeWidth="0.8" />}
+        </>
+      )}
+      {/* posts */}
+      <rect x={x0 - 2} y={ground - h - 2} width="4" height={h + 6} fill={tier === "good" || tier === "better" ? "#5C6B68" : WOOD} stroke={INK} strokeWidth="0.6" />
+      <rect x={x1 - 2} y={ground - h - 2} width="4" height={h + 6} fill={tier === "good" || tier === "better" ? "#5C6B68" : WOOD} stroke={INK} strokeWidth="0.6" />
+      <defs>
+        <pattern id="mesh" width="4" height="4" patternUnits="userSpaceOnUse"><path d="M0 0H4V4" fill="none" stroke={INK} strokeWidth="0.35" /></pattern>
+        <pattern id="net" width="7" height="7" patternUnits="userSpaceOnUse"><path d="M0 0H7V7" fill="none" stroke={INK} strokeWidth="0.3" /></pattern>
+      </defs>
+    </svg>
   );
 }
 
