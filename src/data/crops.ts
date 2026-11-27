@@ -6,6 +6,9 @@
  *    so we use 4 hrs and label it a practical choice).
  *  - spacing: Colorado State Extension GardenNotes #713, block-style raised beds
  *    (published 2014-10, reviewed 2023-04). Crops it doesn't cover are marked "practical".
+ *  - spacing "mu": University of Missouri Extension G6201, Table 1 (distance between plants in the
+ *    row × between hand-cultivated rows).
+ *  - fruit: UConn Home & Garden Education Center fact sheets (blueberries; brambles).
  *  - days: typical seed-packet days to harvest (from transplant for crops set out as plants).
  *    Varieties differ, so these are labeled packet guidance.
  */
@@ -18,12 +21,16 @@ export type Crop = {
   name: string;
   kind: Kind;
   sun: SunNeed;
-  sunSource: "isu" | "isu-partial" | "isu-leafy";
+  sunSource: "isu" | "isu-partial" | "isu-leafy" | "ref" | "practical";
   warm: boolean; // frost-tender: planted after the last frost
   days: number; // packet guidance
   start: "transplant" | "seed" | "sets" | "fall"; // how it usually goes in the ground
   spacing: [number, number]; // inches: in-row × between-row
-  spacingSource: "csu" | "practical";
+  spacingSource: "csu" | "mu" | "ref" | "practical";
+  /** A crop-specific source, used where sunSource or spacingSource is "ref". */
+  ref?: keyof typeof SOURCES;
+  /** When a perennial first gives a real harvest, if the source says. */
+  firstHarvest?: string;
   tall?: boolean; // goes on the north end so it doesn't shade others
   perennial?: boolean;
   note?: string;
@@ -66,6 +73,22 @@ export const CROPS: Crop[] = [
   C({ id: "cilantro", name: "Cilantro", kind: "herb", sun: 4, sunSource: "isu", warm: false, days: 45, start: "seed", spacing: [6, 6], spacingSource: "practical" }),
   C({ id: "strawberry", name: "Strawberry", kind: "fruit", sun: 6, sunSource: "isu", warm: false, days: 365, start: "transplant", spacing: [12, 12], spacingSource: "practical", perennial: true, note: "Comes back every year; first real crop the year after planting." }),
   C({ id: "alyssum", name: "Sweet alyssum (flower)", kind: "flower", sun: 4, sunSource: "isu", warm: false, days: 45, start: "transplant", spacing: [6, 6], spacingSource: "practical", note: "Small flowers that draw hoverflies, whose larvae eat aphids." }),
+  // Added 2026-11-27: the rest of the storyboard catalog, plus small fruit.
+  C({ id: "okra", name: "Okra", kind: "fruiting", sun: 6, sunSource: "isu", warm: true, days: 60, start: "seed", spacing: [12, 30], spacingSource: "mu", tall: true }),
+  C({ id: "sweet-potato", name: "Sweet potato", kind: "root", sun: 6, sunSource: "isu", warm: true, days: 110, start: "transplant", spacing: [12, 30], spacingSource: "mu", note: "Planted from slips (rooted sprouts) after the soil warms." }),
+  C({ id: "pumpkin", name: "Pumpkin", kind: "fruiting", sun: 6, sunSource: "isu", warm: true, days: 105, start: "seed", spacing: [60, 48], spacingSource: "mu", note: "Vines run far; give it a bed end and let it spill onto the path." }),
+  C({ id: "cantaloupe", name: "Cantaloupe (muskmelon)", kind: "fruit", sun: 6, sunSource: "isu", warm: true, days: 85, start: "seed", spacing: [60, 48], spacingSource: "mu" }),
+  C({ id: "watermelon", name: "Watermelon", kind: "fruit", sun: 6, sunSource: "isu", warm: true, days: 85, start: "seed", spacing: [60, 60], spacingSource: "practical", note: "Pick a short-season variety where summers are short." }),
+  C({ id: "blueberry", name: "Blueberry (highbush)", kind: "fruit", sun: 6, sunSource: "ref", warm: false, days: 365, start: "transplant", spacing: [30, 30], spacingSource: "ref", ref: "uconnBlue", perennial: true, firstHarvest: "a 3-year-old bush gives about 2–3 pints, rising to 7–10 pints by year 10", note: "Needs acid soil, pH 4.0–4.8; most garden soil needs sulfur worked in the fall before planting. Plant two or more varieties for a longer harvest." }),
+  C({ id: "raspberry", name: "Raspberry", kind: "fruit", sun: 6, sunSource: "practical", warm: false, days: 365, start: "transplant", spacing: [24, 48], spacingSource: "ref", ref: "uconnBramble", perennial: true, tall: true, note: "Grown as a hedgerow kept 15–18 in wide, canes thinned to 6–10 in apart each spring. Fall-bearing kinds ripen from late August until frost." }),
+  C({ id: "blackberry", name: "Blackberry", kind: "fruit", sun: 6, sunSource: "practical", warm: false, days: 365, start: "transplant", spacing: [24, 48], spacingSource: "ref", ref: "uconnBramble", perennial: true, tall: true, note: "Grown as a hedgerow kept 15–18 in wide, on a trellis or wires." }),
+  C({ id: "asparagus", name: "Asparagus", kind: "leafy", sun: 6, sunSource: "isu", warm: false, days: 365, start: "transplant", spacing: [18, 48], spacingSource: "mu", perennial: true, firstHarvest: "the third year after planting crowns", note: "Comes back for many years, so give it a bed of its own." }),
+  C({ id: "rhubarb", name: "Rhubarb", kind: "leafy", sun: 6, sunSource: "isu", warm: false, days: 365, start: "transplant", spacing: [36, 48], spacingSource: "mu", perennial: true, firstHarvest: "the second year after planting crowns", note: "Eat the stalks only; the leaves are poisonous." }),
+  C({ id: "chives", name: "Chives", kind: "herb", sun: 4, sunSource: "practical", warm: false, days: 365, start: "transplant", spacing: [8, 8], spacingSource: "practical", perennial: true }),
+  C({ id: "thyme", name: "Thyme", kind: "herb", sun: 6, sunSource: "practical", warm: false, days: 365, start: "transplant", spacing: [12, 12], spacingSource: "practical", perennial: true }),
+  C({ id: "mint", name: "Mint", kind: "herb", sun: 4, sunSource: "practical", warm: false, days: 365, start: "transplant", spacing: [18, 18], spacingSource: "practical", perennial: true, note: "Spreads by runners, so it is usually kept in a pot (practical choice)." }),
+  C({ id: "dill", name: "Dill", kind: "herb", sun: 6, sunSource: "practical", warm: false, days: 45, start: "seed", spacing: [9, 9], spacingSource: "practical", tall: true }),
+  C({ id: "marigold", name: "Marigold (flower)", kind: "flower", sun: 6, sunSource: "practical", warm: true, days: 50, start: "transplant", spacing: [9, 9], spacingSource: "practical" }),
 ];
 
 // parsley/cilantro/alyssum aren't in the Iowa State list; 4 hrs is our practical choice for them.
@@ -78,6 +101,9 @@ export const KIND_LABEL: Record<Kind, string> = {
 export const SOURCES = {
   isu: { label: "Iowa State Extension, vegetables in partial shade (2025)", href: "https://yardandgarden.extension.iastate.edu/faq/which-vegetables-will-grow-partial-shade" },
   csu: { label: "Colorado State Extension GardenNotes #713, block-style raised beds (reviewed 2023)", href: "https://extension.colostate.edu/resource/block-style-layout-in-raised-bed-vegetable-gardens/" },
+  mu: { label: "University of Missouri Extension G6201, Table 1 (reviewed 2016)", href: "https://extension.missouri.edu/publications/g6201" },
+  uconnBlue: { label: "UConn Home & Garden Education Center: Blueberries", href: "https://homegarden.cahnr.uconn.edu/factsheets/blueberries" },
+  uconnBramble: { label: "UConn Home & Garden Education Center: Brambles, pruning and training", href: "https://homegarden.cahnr.uconn.edu/factsheets/brambles-pruning-training-growth-characteristics/" },
 };
 
 /** Pairings we only suggest because trials back them. */

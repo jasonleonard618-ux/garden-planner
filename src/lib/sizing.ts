@@ -42,6 +42,11 @@ export const PER_PERSON: Record<string, Row> = {
   turnip: { unit: "ft", fresh: [10, 15] },
   potato: { unit: "ft", fresh: [50, 100] },
   onion: { unit: "ft", fresh: [25, 50] },
+  okra: { unit: "ft", fresh: [3, 5], preserve: [5, 10] },
+  "sweet-potato": { unit: "plants", fresh: [5, 10] },
+  cantaloupe: { unit: "hills", fresh: [3, 5], preserve: [3, 5] },
+  asparagus: { unit: "plants", fresh: [10, 15], preserve: [10, 15] },
+  rhubarb: { unit: "plants", fresh: [2, 3], preserve: [2, 3] },
 };
 /** Crops the table doesn't list get a quarter of a 4 × 8 ft bed for the household (practical choice). */
 export const UNLISTED_SQFT = 8;

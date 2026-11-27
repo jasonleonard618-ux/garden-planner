@@ -25,6 +25,25 @@ export default function Home({ skipIntro }: { skipIntro?: boolean }) {
     return () => { clearTimeout(t1); clearTimeout(t2); };
   }, [phase]);
 
+  // Sections fade and rise into place as they scroll into view; the hero photo drifts slower than the page.
+  useEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      document.querySelectorAll(".home [data-reveal]").forEach((el) => el.classList.add("in"));
+      return;
+    }
+    const io = new IntersectionObserver((entries) => {
+      for (const e of entries) if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); }
+    }, { threshold: 0.18, rootMargin: "0px 0px -6% 0px" });
+    document.querySelectorAll(".home [data-reveal]").forEach((el) => io.observe(el));
+    let raf = 0;
+    const onScroll = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => document.documentElement.style.setProperty("--hero-shift", `${Math.min(window.scrollY, 900) * 0.3}px`));
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => { io.disconnect(); window.removeEventListener("scroll", onScroll); cancelAnimationFrame(raf); };
+  }, []);
+
   return (
     <div className={`home${phase === "done" ? " revealed" : ""}`}>
       {phase !== "done" && (
@@ -59,14 +78,14 @@ export default function Home({ skipIntro }: { skipIntro?: boolean }) {
       </section>
 
       <section id="how" className="how">
-        <div className="how-head">
+        <div className="how-head" data-reveal>
           <p className="eyebrow">How it works</p>
           <h2>From a satellite photo to a shopping list.</h2>
           <p className="lede">Four steps, about fifteen minutes. Everything is drawn on your own yard, and every recommendation shows its source.</p>
         </div>
         <div className="cards">
-          {STEPS.map((s) => (
-            <article key={s.n} className="feature">
+          {STEPS.map((s, i) => (
+            <article key={s.n} className="feature" data-reveal style={{ transitionDelay: `${i * 110}ms` }}>
               <div className={`art art-${s.art}`} aria-hidden><Art kind={s.art} /></div>
               <p className="eyebrow">{s.n} · {s.tag}</p>
               <h3>{s.title}</h3>
@@ -77,11 +96,11 @@ export default function Home({ skipIntro }: { skipIntro?: boolean }) {
       </section>
 
       <section id="sources" className="evidence">
-        <div>
+        <div data-reveal>
           <p className="eyebrow light">No garden folklore</p>
           <h2>Advice you can check.</h2>
         </div>
-        <ul>
+        <ul data-reveal style={{ transitionDelay: "150ms" }}>
           <li><strong>Pairings from trials.</strong> University of Minnesota Extension, USDA-ARS Salinas, and peer-reviewed field trials.</li>
           <li><strong>Sun from real shade.</strong> Shadows cast by your actual buildings and trees, traced across the day.</li>
           <li><strong>Builds to spec.</strong> Fence heights from University of Georgia Extension; frost depth from your local building code.</li>
@@ -89,8 +108,10 @@ export default function Home({ skipIntro }: { skipIntro?: boolean }) {
       </section>
 
       <section className="closing">
-        <h2>Start with your address.</h2>
-        <AddressForm />
+        <div data-reveal>
+          <h2>Start with your address.</h2>
+          <AddressForm />
+        </div>
       </section>
 
       <footer className="home-foot">

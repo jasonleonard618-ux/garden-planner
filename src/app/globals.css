@@ -576,3 +576,8 @@ a.btn { text-decoration: none; display: inline-block; }
   .tools-menu { display: none; }
   .maplibregl-ctrl-bottom-right, .maplibregl-ctrl-bottom-left { bottom: calc(62px + env(safe-area-inset-bottom)) !important; }
 }
+/* Home page: sections ease up into place on scroll; the hero photo moves slower than the page. */
+.home [data-reveal] { opacity: 0; transform: translateY(32px); transition: opacity 0.9s ease, transform 0.9s cubic-bezier(0.2, 0.8, 0.2, 1); will-change: opacity, transform; }
+.home [data-reveal].in { opacity: 1; transform: none; }
+.home .hero-img { inset: -40px 0 0; translate: 0 var(--hero-shift, 0px); }
+@media (prefers-reduced-motion: reduce) { .home [data-reveal] { opacity: 1; transform: none; transition: none; } .home .hero-img { translate: none; } }

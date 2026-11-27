@@ -28,7 +28,7 @@ type Grid = SurfaceGrid & { fromLidar: boolean };
 type Load<T> = { state: "idle" } | { state: "loading" } | { state: "error"; message: string } | { state: "done"; data: T };
 
 const TOOL_LABEL: Record<ToolView, string> = { timeline: "Seed to harvest", problems: "What's wrong?", checklist: "Season checklist" };
-const STEPS = ["Address", "Sun", "Goals", "Beds", "Plants", "Layout", "Build", "Save"];
+const STEPS = ["Address", "Sun", "Goals", "Beds", "Plants", "Layout", "Build", "Grow", "Save"];
 const SEASONS: Season[] = ["spring", "summer", "fall"];
 const SEASON_SHORT: Record<Season, string> = { spring: "Spring", summer: "Summer", fall: "Late summer" };
 const YEAR = new Date().getFullYear() + (new Date().getMonth() > 8 ? 1 : 0);
@@ -109,6 +109,7 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
   const [bedOpts, setBedOpts] = useState<BedOptions>(DEFAULT_BEDS);
   const [picks, setPicks] = useState<string[]>([]);
   const [goals, setGoals] = useState<Goals>(DEFAULT_GOALS);
+  const [growTab, setGrowTab] = useState<ToolView>("timeline");
   const [view, setView] = useState<ToolView | null>(null);
   const [build, setBuild] = useState<BuildChoices>({ bed: "better", fence: "better", drip: true });
   const [sheets, setSheets] = useState(false);
@@ -118,7 +119,6 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
   useEffect(() => { track("step_reached", String(step + 1)); }, [step]);
   useEffect(() => { if (view) track("tool_opened", view); }, [view]);
   useEffect(() => { if (sheets) track("build_plan_opened"); }, [sheets]);
-  const [menu, setMenu] = useState(false);
   const [kindFilter, setKindFilter] = useState<Kind | "all">("all");
   const panelRef = useRef<HTMLElement>(null);
 
@@ -388,7 +388,7 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
   const s = site.state === "done" ? site.data : null;
   const mainSoil = s?.soil?.components.find((c) => c.texture) ?? s?.soil?.components[0];
 
-  const reached = [true, !!garden, !!garden, !!garden, !!garden, !!garden, !!garden, !!place];
+  const reached = [true, !!garden, !!garden, !!garden, !!garden, !!garden, !!garden, true, !!place];
   const go = (i: number) => { if (reached[i]) { setView(null); setStep(i); setMode("idle"); setEditing(false); panelRef.current?.scrollTo({ top: 0 }); } };
   const nextOk = step < STEPS.length - 1 && reached[step + 1];
 
@@ -417,16 +417,6 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
         </nav>
         <span className="step-mobile">{view ? TOOL_LABEL[view] : `Step ${step + 1} of ${STEPS.length} · ${STEPS[step]}`}</span>
         <Feedback step={view ?? STEPS[step]} />
-        <div className="tools-menu">
-          <button className={`tools-btn${view ? " on" : ""}`} onClick={() => setMenu(!menu)} aria-expanded={menu} aria-haspopup="menu">Grow tools ▾</button>
-          {menu && (
-            <ul className="tools-pop glass" role="menu">
-              {(Object.keys(TOOL_LABEL) as ToolView[]).map((k) => (
-                <li key={k}><button role="menuitem" onClick={() => { setView(k); setMenu(false); panelRef.current?.scrollTo({ top: 0 }); }}>{TOOL_LABEL[k]}</button></li>
-              ))}
-            </ul>
-          )}
-        </div>
       </header>
 
       <main className="mapwrap">
@@ -488,7 +478,7 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
         {toast && <div className="toast" role="status">{toast}</div>}
       </main>
 
-      <aside className={`panel glass${view ? " wide" : ""}${collapsed ? " collapsed" : ""}`} ref={panelRef}>
+      <aside className={`panel glass${view || step === 7 ? " wide" : ""}${collapsed ? " collapsed" : ""}`} ref={panelRef}>
         <button className="sheet-handle" aria-expanded={!collapsed} aria-label={collapsed ? "Show the panel" : "Hide the panel to see more map"} onClick={() => setCollapsed((c) => !c)}>
           <span aria-hidden /> {collapsed ? "Show" : "Hide"}
         </button>
@@ -738,12 +728,26 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
           />
         )}
         {step === 4 && (
-          <PlantsStep picks={picks} setPicks={setPicks} bestSun={bestSun} frost={frost} kind={kindFilter} setKind={setKindFilter} bedSuns={bedSuns} state={siteState} />
+          <PlantsStep onTimeline={() => { setGrowTab("timeline"); go(7); }} picks={picks} setPicks={setPicks} bestSun={bestSun} frost={frost} kind={kindFilter} setKind={setKindFilter} bedSuns={bedSuns} state={siteState} />
         )}
         {step === 5 && <LayoutStep plan={plan} picks={picks} onPick={() => go(4)} ends={fit?.ends ?? ["north", "south"]} />}
         {step === 6 && area && fit && <BuildStep garden={area} trimmed={area !== garden} beds={fit.beds} choices={build} setChoices={setBuild} onOpen={() => setSheets(true)} />}
 
         {step === 7 && (
+          <>
+            <p className="lede">Your plan doesn&apos;t stop at the build. These tools follow your crops and frost dates through the season.</p>
+            <div className="tabs grow-tabs" role="tablist" aria-label="Grow tools">
+              {(Object.keys(TOOL_LABEL) as ToolView[]).map((k) => (
+                <button key={k} role="tab" aria-selected={growTab === k} className={growTab === k ? "tab on" : "tab"} onClick={() => setGrowTab(k)}>{TOOL_LABEL[k]}</button>
+              ))}
+            </div>
+            {growTab === "timeline" && <Timeline picks={picks} frost={frost} state={siteState} onPick={() => go(garden ? 4 : 0)} />}
+            {growTab === "problems" && <Problems />}
+            {growTab === "checklist" && <Checklist frost={frost} />}
+          </>
+        )}
+
+        {step === 8 && (
           <>
             <h1 className="title">Save your plan</h1>
             <p className="lede">Give it a name so you can come back to it.</p>
@@ -799,7 +803,7 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
       </aside>
       <nav className="tabbar" aria-label="Sections">
         {([[null, "Plan"], ["timeline", "Seed to harvest"], ["problems", "What's wrong?"], ["checklist", "Checklist"]] as [ToolView | null, string][]).map(([k, label]) => (
-          <button key={label} className={view === k ? "on" : ""} aria-current={view === k ? "page" : undefined} onClick={() => { setView(k); setMenu(false); setCollapsed(false); panelRef.current?.scrollTo({ top: 0 }); }}>
+          <button key={label} className={view === k ? "on" : ""} aria-current={view === k ? "page" : undefined} onClick={() => { setView(k); setCollapsed(false); panelRef.current?.scrollTo({ top: 0 }); }}>
             <TabIcon k={k} />
             <span>{label}</span>
           </button>
@@ -1024,8 +1028,8 @@ function BedsStep({ total, onGoals, fit, cols, opts, setOpts, suns, season, sunB
 
 const FIT_LABEL: Record<FitTag, string> = { fits: "Fits", "needs-sun": "Needs more sun", "season-short": "Season too short", fall: "Plant in fall", perennial: "Comes back yearly" };
 
-function PlantsStep({ picks, setPicks, bestSun, frost, kind, setKind, bedSuns, state }: {
-  picks: string[]; setPicks: (p: string[]) => void; bestSun: number | null; frost: SiteData["frost"] | null;
+function PlantsStep({ onTimeline, picks, setPicks, bestSun, frost, kind, setKind, bedSuns, state }: {
+  onTimeline: () => void; picks: string[]; setPicks: (p: string[]) => void; bestSun: number | null; frost: SiteData["frost"] | null;
   kind: Kind | "all"; setKind: (k: Kind | "all") => void; bedSuns: (number | null)[] | null; state: string | null;
 }) {
   const guide = guideFor(state);
@@ -1072,7 +1076,7 @@ function PlantsStep({ picks, setPicks, bestSun, frost, kind, setKind, bedSuns, s
           );
         })}
       </ul>
-      <p className="muted small">{picks.length ? `${picks.length} crop${picks.length > 1 ? "s" : ""} picked.` : "Pick a few crops, then see them laid out in your beds."}</p>
+      <p className="muted small">{picks.length ? <>{picks.length} crop{picks.length > 1 ? "s" : ""} picked. <button className="link" onClick={onTimeline}>See when to start each one</button> in Grow tools.</> : "Pick a few crops, then see them laid out in your beds."}</p>
     </>
   );
 }
@@ -1084,10 +1088,10 @@ function CropFacts({ c, bedsOk, beds, frost, guide }: { c: Crop; bedsOk: number 
     <div className="facts">
       <p><b>Sun:</b> {c.sun === 6 ? "6+ hours" : c.sun === 4 ? "about 4+ hours (part shade is OK)" : "3 to 4 hours is enough"}
         {bedsOk != null && beds > 0 && <> · fits {bedsOk} of your {beds} beds</>}
-        {SUN_PRACTICAL.has(c.id) ? <span className="label-pc">practical choice</span> : <> <Why href={SOURCES.isu.href} /></>}</p>
+        {SUN_PRACTICAL.has(c.id) || c.sunSource === "practical" ? <span className="label-pc">practical choice</span> : <> <Why href={(c.sunSource === "ref" && c.ref ? SOURCES[c.ref] : SOURCES.isu).href} /></>}</p>
       <p><b>Spacing:</b> {c.spacing[0]} in{c.spacing[1] !== c.spacing[0] ? ` × ${c.spacing[1]} in` : " apart"} · about {plantsPerSquare(c)} per 4 × 4 ft square
-        {c.spacingSource === "csu" ? <> <Why href={SOURCES.csu.href} /></> : <span className="label-pc">practical choice</span>}</p>
-      <p><b>Harvest:</b> {c.perennial ? "the year after planting" : c.start === "fall" ? "next summer" : `about ${c.days} days ${c.start === "transplant" ? "after planting out" : "after sowing"}`}<span className="label-pc">packet guidance</span></p>
+        {c.spacingSource === "practical" ? <span className="label-pc">practical choice</span> : <> <Why href={(c.spacingSource === "ref" && c.ref ? SOURCES[c.ref] : c.spacingSource === "mu" ? SOURCES.mu : SOURCES.csu).href} /></>}</p>
+      <p><b>Harvest:</b> {c.perennial ? c.firstHarvest ?? "the year after planting" : c.start === "fall" ? "next summer" : `about ${c.days} days ${c.start === "transplant" ? "after planting out" : "after sowing"}`}{c.firstHarvest ? <> <Why href={(c.ref ? SOURCES[c.ref] : SOURCES.mu).href} /></> : <span className="label-pc">packet guidance</span>}</p>
       <p><b>Goes in:</b> {c.warm ? `after your last frost${frost ? ` (${frost.lastSpring})` : ""}; it can't take frost` : c.start === "fall" ? "in fall" : "early, as a cool-season crop"}{c.start === "transplant" ? ", as plants" : c.start === "sets" ? ", from sets" : c.start === "seed" ? ", sown as seed" : ""}.</p>
       {c.note && <p>{c.note}</p>}
       {pair && partner && <p className="pair"><b>Pairs with {partner.name.toLowerCase()}:</b> {pair.claim} <a className="why" href={pair.source.href} target="_blank" rel="noreferrer">Why?</a></p>}

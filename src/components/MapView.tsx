@@ -74,7 +74,7 @@ type Props = {
 
 const SOURCES = {
   usgs:
-    "https://imagery.nationalmap.gov/arcgis/rest/services/USGSNAIPPlus/ImageServer/exportImage?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=256,256&format=jpgpng&f=image",
+    "https://imagery.nationalmap.gov/arcgis/rest/services/USGSNAIPPlus/ImageServer/exportImage?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=512,512&format=jpgpng&f=image",
   esri: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
 };
 
@@ -105,12 +105,14 @@ export default function MapView(props: Props) {
       style: {
         version: 8,
         sources: {
-          usgs: { type: "raster", tiles: [SOURCES.usgs], tileSize: 256, maxzoom: 20, attribution: "Imagery: USDA NAIP via USGS The National Map" },
+          usgs: { type: "raster", tiles: [SOURCES.usgs], tileSize: 512, minzoom: 10, maxzoom: 20, attribution: "Imagery: USDA NAIP via USGS The National Map" },
           esri: { type: "raster", tiles: [SOURCES.esri], tileSize: 256, maxzoom: 19, attribution: "Imagery: Esri, Maxar, Earthstar Geographics" },
         },
         layers: [
           { id: "bg", type: "background", paint: { "background-color": "#dfe6dc" } },
-          { id: "usgs", type: "raster", source: "usgs" },
+          // Zoomed out, use Esri's cached tiles: USGS draws every tile on request, which is slow.
+          { id: "overview", type: "raster", source: "esri", maxzoom: 12 },
+          { id: "usgs", type: "raster", source: "usgs", minzoom: 12, paint: { "raster-fade-duration": 150 } },
           { id: "esri", type: "raster", source: "esri", layout: { visibility: "none" } },
         ],
       },
@@ -370,7 +372,15 @@ export default function MapView(props: Props) {
   }, [props.editRing]);
 
   useEffect(() => {
-    if (props.flyTo && map.current) map.current.flyTo({ center: props.flyTo.center, zoom: props.flyTo.zoom, speed: 1.6, padding: { left: props.flyTo.padLeft ?? 0, top: 0, right: 0, bottom: props.flyTo.padBottom ?? 0 } });
+    const m = map.current, f = props.flyTo;
+    if (!f || !m) return;
+    const padding = { left: f.padLeft ?? 0, top: 0, right: 0, bottom: f.padBottom ?? 0 };
+    // A long trip (like the first jump to an address) goes straight there, so the map doesn't
+    // request imagery for every zoom level along the way.
+    const c = m.getCenter();
+    const far = m.getZoom() < 12 || Math.hypot(c.lng - f.center[0], c.lat - f.center[1]) > 0.05;
+    if (far) m.jumpTo({ center: f.center, zoom: f.zoom, padding });
+    else m.flyTo({ center: f.center, zoom: f.zoom, speed: 1.6, padding });
   }, [props.flyTo]);
 
   useEffect(() => {
