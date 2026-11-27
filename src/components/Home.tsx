@@ -26,24 +26,21 @@ export default function Home({ skipIntro }: { skipIntro?: boolean }) {
     return () => { clearTimeout(t1); clearTimeout(t2); };
   }, [phase]);
 
-  // Sections fade and rise into place as they scroll into view; the hero photo drifts slower than the page.
+  // The top bar widens with the wordmark once the hero scrolls away; the "How it works" picture
+  // follows whichever step is in the middle of the screen.
+  const [active, setActive] = useState(0);
   useEffect(() => {
-    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (reduce) document.querySelectorAll(".home [data-reveal]").forEach((el) => el.classList.add("in"));
-    const io = reduce ? null : new IntersectionObserver((entries) => {
-      for (const e of entries) if (e.isIntersecting) { e.target.classList.add("in"); io?.unobserve(e.target); }
-    }, { threshold: 0.18, rootMargin: "0px 0px -6% 0px" });
-    if (io) document.querySelectorAll(".home [data-reveal]").forEach((el) => io.observe(el));
     let raf = 0;
     const onScroll = () => {
       cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(() => {
-        document.documentElement.style.setProperty("--hero-shift", `${Math.min(window.scrollY, 900) * 0.3}px`);
-        setPastHero(window.scrollY > window.innerHeight * 0.6);
-      });
+      raf = requestAnimationFrame(() => setPastHero(window.scrollY > window.innerHeight * 0.6));
     };
     window.addEventListener("scroll", onScroll, { passive: true });
-    return () => { io?.disconnect(); window.removeEventListener("scroll", onScroll); cancelAnimationFrame(raf); };
+    const io = new IntersectionObserver((entries) => {
+      for (const e of entries) if (e.isIntersecting) setActive(Number((e.target as HTMLElement).dataset.step));
+    }, { rootMargin: "-45% 0px -45% 0px" });
+    document.querySelectorAll(".how-steps [data-step]").forEach((el) => io.observe(el));
+    return () => { io.disconnect(); window.removeEventListener("scroll", onScroll); cancelAnimationFrame(raf); };
   }, []);
 
   return (
@@ -81,29 +78,37 @@ export default function Home({ skipIntro }: { skipIntro?: boolean }) {
       </section>
 
       <section id="how" className="how">
-        <div className="how-head" data-reveal>
+        <div className="how-head">
           <p className="eyebrow">How it works</p>
           <h2>From a satellite photo to a shopping list.</h2>
-          <p className="lede">Four steps, about fifteen minutes. Everything is drawn on your own yard, and every recommendation shows its source.</p>
+          <p className="lede">About fifteen minutes. Everything is drawn on your own yard, and every recommendation shows its source.</p>
         </div>
-        <div className="cards">
-          {STEPS.map((s, i) => (
-            <article key={s.n} className="feature" data-reveal style={{ transitionDelay: `${i * 110}ms` }}>
-              <div className={`art art-${s.art}`} aria-hidden><Art kind={s.art} /></div>
-              <p className="eyebrow">{s.n} · {s.tag}</p>
-              <h3>{s.title}</h3>
-              <p>{s.body}</p>
-            </article>
-          ))}
+        <div className="how-sticky">
+          <div className="how-stage" aria-hidden>
+            {STEPS.map((s, i) => (
+              <div key={s.n} className={`stage-art art art-${s.art}${i === active ? " on" : ""}`}><Art kind={s.art} /></div>
+            ))}
+            <span className="stage-count">{STEPS[active].n} / 0{STEPS.length}</span>
+          </div>
+          <ol className="how-steps">
+            {STEPS.map((s, i) => (
+              <li key={s.n} data-step={i} className={i === active ? "on" : ""}>
+                <div className={`step-art art art-${s.art}`} aria-hidden><Art kind={s.art} /></div>
+                <p className="eyebrow">{s.n} · {s.tag}</p>
+                <h3>{s.title}</h3>
+                <p>{s.body}</p>
+              </li>
+            ))}
+          </ol>
         </div>
       </section>
 
       <section id="sources" className="evidence">
-        <div data-reveal>
+        <div>
           <p className="eyebrow light">No garden folklore</p>
           <h2>Advice you can check.</h2>
         </div>
-        <ul data-reveal style={{ transitionDelay: "150ms" }}>
+        <ul>
           <li><strong>Pairings from trials.</strong> University of Minnesota Extension, USDA-ARS Salinas, and peer-reviewed field trials.</li>
           <li><strong>Sun from real shade.</strong> Shadows cast by your actual buildings and trees, traced across the day.</li>
           <li><strong>Builds to spec.</strong> Fence heights from University of Georgia Extension; frost depth from your local building code.</li>
@@ -111,10 +116,8 @@ export default function Home({ skipIntro }: { skipIntro?: boolean }) {
       </section>
 
       <section className="closing">
-        <div data-reveal>
-          <h2>Start with your address.</h2>
-          <AddressForm />
-        </div>
+        <h2>Start with your address.</h2>
+        <AddressForm />
       </section>
 
       <footer className="home-foot">

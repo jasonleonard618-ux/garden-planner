@@ -200,7 +200,7 @@ fieldset input, fieldset select { padding: 6px 8px; }
 @media (prefers-reduced-motion: reduce) { .intro-logo * { animation: none !important; stroke-dashoffset: 0 !important; } }
 
 /* ---------- home page ---------- */
-.home { min-height: 100dvh; background: var(--paper); overflow-x: hidden; }
+.home { min-height: 100dvh; background: var(--paper); overflow-x: clip; }
 .home .hero-img { animation: none; }
 .home.revealed .hero-img { animation: settle 1.6s ease-out both; }
 @keyframes settle { from { transform: scale(1.08); } to { transform: scale(1); } }
@@ -576,11 +576,6 @@ a.btn { text-decoration: none; display: inline-block; }
   .tools-menu { display: none; }
   .maplibregl-ctrl-bottom-right, .maplibregl-ctrl-bottom-left { bottom: calc(62px + env(safe-area-inset-bottom)) !important; }
 }
-/* Home page: sections ease up into place on scroll; the hero photo moves slower than the page. */
-.home [data-reveal] { opacity: 0; transform: translateY(32px); transition: opacity 0.9s ease, transform 0.9s cubic-bezier(0.2, 0.8, 0.2, 1); will-change: opacity, transform; }
-.home [data-reveal].in { opacity: 1; transform: none; }
-.home .hero-img { inset: -40px 0 0; translate: 0 var(--hero-shift, 0px); }
-@media (prefers-reduced-motion: reduce) { .home [data-reveal] { opacity: 1; transform: none; transition: none; } .home .hero-img { translate: none; } }
 /* Home nav: a compact pill of links at the top-right over the hero (the hero carries the big logo);
    once the hero scrolls away it widens and the wordmark slides in. */
 .home-nav { position: fixed; left: auto; right: 24px; gap: 18px; padding: 8px 8px 8px 22px; transition: left 0.5s cubic-bezier(0.2, 0.8, 0.2, 1), padding 0.5s ease, background 0.4s ease; }
@@ -592,3 +587,35 @@ a.btn { text-decoration: none; display: inline-block; }
   .home-nav.past { left: 10px; }
 }
 @media (prefers-reduced-motion: reduce) { .home-nav, .home-nav .brand { transition: none; } }
+/* Home page: sticky sections. The hero stays pinned while "How it works" slides over it; the step
+   picture holds still while the steps scroll past; the evidence panel pins and the closing slides over. */
+.home .hero { position: sticky; top: 0; z-index: 0; }
+.home .how { position: relative; z-index: 1; background: var(--paper); border-radius: 32px 32px 0 0; margin-top: -32px; box-shadow: 0 -18px 40px rgba(0, 0, 0, 0.18); }
+.how-sticky { display: grid; grid-template-columns: 1.15fr 1fr; gap: clamp(32px, 5vw, 80px); align-items: start; }
+.how-stage { position: sticky; top: 110px; height: min(560px, calc(100dvh - 170px)); border-radius: 28px; overflow: hidden; background: var(--mint-soft); box-shadow: 0 20px 50px rgba(11, 53, 48, 0.12); }
+.stage-art { position: absolute; inset: 0; height: auto; border-radius: 0; opacity: 0; transform: scale(1.04); transition: opacity 0.6s ease, transform 0.8s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.stage-art.on { opacity: 1; transform: none; }
+.stage-art .art-tags, .stage-art .art-tiers { zoom: 1.9; }
+.stage-art .art-chip { font-size: 14px; padding: 6px 12px; left: 18px; bottom: 18px; }
+.stage-count { position: absolute; right: 18px; top: 16px; font-family: var(--mono); font-size: 12px; letter-spacing: 0.1em; color: var(--teal); background: rgba(255, 255, 255, 0.85); padding: 4px 10px; border-radius: 999px; }
+.how-steps { list-style: none; margin: 0; padding: 0; }
+.how-steps > li { min-height: 72vh; display: flex; flex-direction: column; justify-content: center; gap: 10px; opacity: 0.35; transition: opacity 0.4s ease; }
+.how-steps > li.on { opacity: 1; }
+.how-steps > li:last-child { min-height: 60vh; }
+.how-steps h3 { font-family: var(--serif); font-size: clamp(34px, 3.4vw, 48px); font-weight: 400; text-transform: none; letter-spacing: -0.3px; color: var(--teal); margin: 0; line-height: 1.02; }
+.how-steps p:not(.eyebrow) { margin: 0; font-size: 17px; color: var(--muted); max-width: 440px; }
+.step-art { display: none; }
+.home .evidence { position: sticky; top: 0; z-index: 2; min-height: 70vh; align-content: center; }
+.home .closing, .home .home-foot { position: relative; z-index: 3; }
+.home .closing { border-radius: 32px 32px 0 0; margin-top: -32px; box-shadow: 0 -18px 40px rgba(0, 0, 0, 0.18); min-height: 50vh; align-content: center; }
+.home .home-foot { background: var(--paper); }
+@media (max-width: 760px) {
+  .how-sticky { grid-template-columns: 1fr; }
+  .how-stage { display: none; }
+  .how-steps > li { min-height: 0; opacity: 1; padding: 22px 0; border-top: 1px solid var(--line); }
+  .step-art { display: grid; height: 180px; }
+  .home .evidence { position: relative; min-height: 0; }
+  .home .closing { margin-top: 0; border-radius: 0; box-shadow: none; }
+}
+@media (prefers-reduced-motion: reduce) { .stage-art, .how-steps > li { transition: none; } }
+
