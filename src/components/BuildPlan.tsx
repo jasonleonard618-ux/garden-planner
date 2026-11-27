@@ -33,8 +33,8 @@ export function useBuild(garden: LngLat[] | null, beds: Bed[], c: BuildChoices) 
   }, [garden, beds, c]);
 }
 
-export function BuildStep({ garden, beds, choices, setChoices, onOpen }: {
-  garden: LngLat[]; beds: Bed[]; choices: BuildChoices; setChoices: (c: BuildChoices) => void; onOpen: () => void;
+export function BuildStep({ garden, beds, choices, setChoices, onOpen, trimmed }: {
+  garden: LngLat[]; beds: Bed[]; trimmed?: boolean; choices: BuildChoices; setChoices: (c: BuildChoices) => void; onOpen: () => void;
 }) {
   const b = useBuild(garden, beds, choices);
   if (!b) return null;
@@ -42,6 +42,7 @@ export function BuildStep({ garden, beds, choices, setChoices, onOpen }: {
     <>
       <h1 className="title">Preview the build</h1>
       <p className="lede">Pick a level for the beds and the fence. Quantities come from your layout; prices are rough, so check your local store.</p>
+      {trimmed && <p className="muted small">The fence and drip wrap just your {beds.length} beds, 1½ ft out from their edges, not the whole outline you drew.</p>}
       <h3>Beds</h3>
       <div className="tiers" role="radiogroup" aria-label="Bed level">
         {(Object.keys(BED_TIERS) as BedTier[]).map((k) => (
@@ -353,7 +354,7 @@ function CdSheet({ no, name, index }: { no: string; name: string; index: [string
   );
 }
 
-export function BuildPlanSheets({ name, garden, beds, ends, plan, choices, onClose }: { name: string; garden: LngLat[]; beds: Bed[]; ends: [string, string]; plan: Plan; choices: BuildChoices; onClose: () => void }) {
+export function BuildPlanSheets({ name, garden, beds, ends, plan, choices, onClose, trimmed }: { trimmed?: boolean; name: string; garden: LngLat[]; beds: Bed[]; ends: [string, string]; plan: Plan; choices: BuildChoices; onClose: () => void }) {
   const cap = (w: string) => w[0].toUpperCase() + w.slice(1);
   const b = useBuild(garden, beds, choices)!;
   const fence = !!b.fl && choices.fence !== "none";
@@ -393,7 +394,7 @@ export function BuildPlanSheets({ name, garden, beds, ends, plan, choices, onClo
           {plan.beds.some((pb) => !pb.north.crop && !pb.south.crop) && <p className="muted small">Beds not listed are open for now.</p>}
           </div>
         </div>
-        <p className="sheet-note">{beds.length} beds, 4 × 8 ft, long sides {ends[0] === "north" ? "roughly north to south" : "roughly east to west"}, kept 1½ ft in from the outline.{b.fl ? " Squares are fence posts." : ""} Plants are drawn at Extension spacing; crops planted closer than 6 in show as a fill, not one symbol per plant. Paler plants get less sun than they like.</p>
+        <p className="sheet-note">{beds.length} beds, 4 × 8 ft, long sides {ends[0] === "north" ? "roughly north to south" : "roughly east to west"}, {trimmed ? "with a 1½ ft walking edge inside the dashed line, which is the fenced garden" : "kept 1½ ft in from the outline"}.{b.fl ? " Squares are fence posts." : ""} Plants are drawn at Extension spacing; crops planted closer than 6 in show as a fill, not one symbol per plant. Paler plants get less sun than they like.</p>
         <TitleBlock no="A-101" title="Site plan" name={name} />
       </section>
       <CdSheet no={`B-10${BED_NO[choices.bed]}`} name={name} index={index} />

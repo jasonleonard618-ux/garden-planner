@@ -149,3 +149,25 @@ export function bedSun(bed: Bed, hours: Float32Array, g: { cols: number; rows: n
   }
   return sum / n;
 }
+
+/**
+ * The working garden around a set of beds: a rectangle lined up with the beds, marginFt outside their
+ * outer edges (the same walking edge the beds keep from a drawn outline). Fence and drip follow this
+ * when only some of the beds that fit are being built.
+ */
+export function bedsArea(beds: Bed[], angleDeg: number, marginFt: number): LngLat[] {
+  const pts = beds.flatMap((b) => b.ring);
+  const lat0 = pts.reduce((a, p) => a + p[1], 0) / pts.length;
+  const lon0 = pts.reduce((a, p) => a + p[0], 0) / pts.length;
+  const kx = 111320 * Math.cos((lat0 * Math.PI) / 180) * 3.28084, ky = 110574 * 3.28084;
+  const a = (angleDeg * Math.PI) / 180;
+  const u: [number, number] = [Math.sin(a), Math.cos(a)], v: [number, number] = [Math.cos(a), -Math.sin(a)];
+  const loc = pts.map((p) => [(p[0] - lon0) * kx, (p[1] - lat0) * ky]);
+  const us = loc.map((p) => p[0] * u[0] + p[1] * u[1]), vs = loc.map((p) => p[0] * v[0] + p[1] * v[1]);
+  const [u0, u1, v0, v1] = [Math.min(...us) - marginFt, Math.max(...us) + marginFt, Math.min(...vs) - marginFt, Math.max(...vs) + marginFt];
+  const back = (pu: number, pv: number): LngLat => {
+    const x = pu * u[0] + pv * v[0], y = pu * u[1] + pv * v[1];
+    return [lon0 + x / kx, lat0 + y / ky];
+  };
+  return [back(u0, v0), back(u1, v0), back(u1, v1), back(u0, v1)];
+}

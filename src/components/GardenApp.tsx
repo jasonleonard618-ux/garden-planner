@@ -18,7 +18,7 @@ import { sizeGarden } from "@/lib/sizing";
 import { Feedback, listAccountPlans, saveToAccount, SignIn, useSession } from "./Account";
 import { supabase, track } from "@/lib/supabase";
 import { sunnierSpots } from "@/lib/bestspot";
-import { bedSun, DEFAULT_BEDS, fitBeds, type BedFit, type BedOptions } from "@/lib/beds";
+import { bedsArea, bedSun, DEFAULT_BEDS, fitBeds, type BedFit, type BedOptions } from "@/lib/beds";
 import { planBeds, type Square } from "@/lib/layout";
 import { CROPS, cropFit, KIND_LABEL, PAIRINGS, plantsPerSquare, SOURCES, SUN_PRACTICAL, type Crop, type FitTag, type Kind } from "@/data/crops";
 
@@ -291,6 +291,11 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
       bedSuns: allSuns ? keep.map((i) => allSuns[i]) : null,
     };
   }, [fitAll, allSuns, wantBeds]);
+  // When only some of the beds that fit are built, the fence and drip wrap just those beds.
+  const area = useMemo(() => {
+    if (!garden || !fit || !fitAll || fit.beds.length >= fitAll.beds.length || !fit.beds.length) return garden;
+    return bedsArea(fit.beds, fit.angle, bedOpts.edgeFt ?? 1.5);
+  }, [garden, fit, fitAll, bedOpts.edgeFt]);
   const bedRows = useMemo(() => (fit ? fit.beds.map((b, i) => ({ n: b.n, sun: bedSuns?.[i] ?? null })) : []), [fit, bedSuns]);
   const bestSun = bedSuns?.length ? Math.max(...bedSuns.map((h) => h ?? 0)) : sunStats?.avgHours ?? null;
   const frost = site.state === "done" ? site.data.frost ?? null : null;
@@ -736,7 +741,7 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
           <PlantsStep picks={picks} setPicks={setPicks} bestSun={bestSun} frost={frost} kind={kindFilter} setKind={setKindFilter} bedSuns={bedSuns} state={siteState} />
         )}
         {step === 5 && <LayoutStep plan={plan} picks={picks} onPick={() => go(4)} ends={fit?.ends ?? ["north", "south"]} />}
-        {step === 6 && garden && fit && <BuildStep garden={garden} beds={fit.beds} choices={build} setChoices={setBuild} onOpen={() => setSheets(true)} />}
+        {step === 6 && area && fit && <BuildStep garden={area} trimmed={area !== garden} beds={fit.beds} choices={build} setChoices={setBuild} onOpen={() => setSheets(true)} />}
 
         {step === 7 && (
           <>
@@ -792,8 +797,8 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
         </div>
         </>)}
       </aside>
-      {sheets && garden && fit && (
-        <BuildPlanSheets name={profileName.trim() || place?.label.split(",")[0] || "My garden"} garden={garden} beds={fit.beds} ends={fit.ends} plan={plan} choices={build} onClose={() => setSheets(false)} />
+      {sheets && area && fit && (
+        <BuildPlanSheets name={profileName.trim() || place?.label.split(",")[0] || "My garden"} garden={area} beds={fit.beds} ends={fit.ends} plan={plan} trimmed={area !== garden} choices={build} onClose={() => setSheets(false)} />
       )}
     </div>
   );
