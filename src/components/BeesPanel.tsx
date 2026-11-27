@@ -13,6 +13,8 @@ export const BEE_TABS: [BeeTab, string][] = [["flowers", "Flowers"], ["wild", "W
 /** What the person has chosen in the Bees tab. Saved with the plan. */
 export type BeeState = {
   hives: 0 | 1 | 2;
+  /** Only true once the person asks for the hive stand in their build plan. */
+  stand?: boolean;
   plants: string[];
   hive: [number, number] | null;
   facing: string | null;
@@ -30,12 +32,12 @@ export function BeeLink({ k }: { k: BeeSrc }) {
 
 type HiveSun = { avg: number | null; am: number | null; pm: number | null; season: string } | null;
 
-export function BeesPanel({ tab, setTab, bees, setBees, picks, state, wind, sun, sunBusy, hasPlace, placing, onPlace, onCancelPlace, onSheet }: {
+export function BeesPanel({ tab, setTab, bees, setBees, picks, state, wind, sun, sunBusy, hasPlace, placing, onPlace, onCancelPlace, onSheet, hasBuild }: {
   tab: BeeTab; setTab: (t: BeeTab) => void;
   bees: BeeState; setBees: (b: BeeState) => void;
   picks: string[]; state: string | null; wind: string | null;
   sun: HiveSun; sunBusy: boolean; hasPlace: boolean; placing: boolean;
-  onPlace: () => void; onCancelPlace: () => void; onSheet: () => void;
+  onPlace: () => void; onCancelPlace: () => void; onSheet: () => void; hasBuild: boolean;
 }) {
   const set = (p: Partial<BeeState>) => setBees({ ...bees, ...p });
   return (
@@ -50,7 +52,7 @@ export function BeesPanel({ tab, setTab, bees, setBees, picks, state, wind, sun,
       {tab === "wild" && <WildBees />}
       {tab === "spot" && <HiveSpot bees={bees} set={set} wind={wind} sun={sun} sunBusy={sunBusy} hasPlace={hasPlace} placing={placing} onPlace={onPlace} onCancelPlace={onCancelPlace} />}
       {tab === "rules" && <Rules state={state} bees={bees} set={set} />}
-      {tab === "kit" && <HiveKit bees={bees} set={set} state={state} onSheet={onSheet} />}
+      {tab === "kit" && <HiveKit bees={bees} set={set} state={state} onSheet={onSheet} hasBuild={hasBuild} />}
     </>
   );
 }
@@ -287,7 +289,7 @@ function Rules({ state, bees, set }: { state: string | null; bees: BeeState; set
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-function HiveKit({ bees, set, state, onSheet }: { bees: BeeState; set: (p: Partial<BeeState>) => void; state: string | null; onSheet: () => void }) {
+function HiveKit({ bees, set, state, onSheet, hasBuild }: { bees: BeeState; set: (p: Partial<BeeState>) => void; state: string | null; onSheet: () => void; hasBuild: boolean }) {
   const n = bees.hives || 1;
   const ct = state === "CT";
   const tasks = CALENDAR.filter((t) => ct || !t.ctOnly);
@@ -307,8 +309,9 @@ function HiveKit({ bees, set, state, onSheet }: { bees: BeeState; set: (p: Parti
       <p className="small">One stand holds one or two hives, 18 in off the ground to keep skunks and mice away <BeeLink k="mu" />, with the back legs ½ in taller so rain runs out the front <BeeLink k="psu" />. The sheet also shows the hive spot layout: flyway barrier, water distance and lot line.</p>
       <div className="row" style={{ gap: 8 }}>
         <button className="btn primary" onClick={onSheet}>Open sheet H-101</button>
+        <button className={bees.stand ? "btn" : "btn ghost"} aria-pressed={!!bees.stand} onClick={() => set({ stand: !bees.stand })}>{bees.stand ? "✓ In my build plan" : "Add to my build plan"}</button>
       </div>
-      {!!bees.hives && <p className="muted small">It’s also added to your build plan, with the lumber in the shopping list.</p>}
+      <p className="muted small">{bees.stand ? `Sheet H-101 and the stand lumber are in your build plan${hasBuild ? "" : " once you get to the Build step"}. Press again to take them out.` : "Not in your build plan unless you add it here or in the Build step."}</p>
 
       <h2 className="bee-h">What to buy{bees.hives ? `, ${bees.hives === 1 ? "one hive" : "two hives"}` : ""}</h2>
       {groups.map(([title, lines]) => (

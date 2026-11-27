@@ -685,6 +685,7 @@ a.btn { text-decoration: none; display: inline-block; }
 .sw-water-soaker { background: #6A4C3B repeating-linear-gradient(180deg, transparent 0 18px, #3B3A36 18px 24px); }
 .sw-water-hand { background: #6A4C3B; }
 .sw-fence { background: #7E9465 linear-gradient(90deg, rgba(255,255,255,0.85) 1.5px, transparent 1.5px) 0 0 / 14px 14px, linear-gradient(180deg, rgba(255,255,255,0.85) 1.5px, transparent 1.5px) 0 0 / 14px 14px; }
+.sw-hive { background: #F2B544 radial-gradient(circle at 50% 50%, rgba(255,255,255,0.5) 2px, transparent 2.5px) 0 0 / 10px 10px; }
 .build-sum { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 0; }
 .build-sum div { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 8px 12px; }
 .build-sum dt { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
