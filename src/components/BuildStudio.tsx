@@ -105,14 +105,16 @@ const FENCE_INFO: Record<Tier, { blurb: string; time: string; steps: string[] }>
     ],
   },
   excellent: {
-    blurb: "Cedar-framed cattle-panel bays on a 2×8 kickboard, with deer wires to 8 ft and a cedar gate that won't sag.",
-    time: "four weekends, or a pro crew",
+    blurb: "Cedar-framed cattle-panel bays on a 2×8 kickboard, with deer wires to 8 ft, a pergola beam along the top and a cedar gate that won't sag.",
+    time: "four to five weekends, or a pro crew",
     steps: [
       "Call 811 at least two working days before you dig.",
-      "Set the 12 ft cedar posts in concrete, bottoms at your frost depth or 36 in, whichever is deeper, on 6 in of gravel.",
+      "Set the 12 ft cedar posts in concrete (14 ft if your frost line is deeper than 36 in), bottoms at your frost depth or 36 in, whichever is deeper, on 6 in of gravel.",
       "Fit the 2×8 kickboard, 1 in below grade, between posts.",
       "Build each bay's 2×4 frame, staple in the cattle panel, and cap it with the top rail.",
-      "String deer wires at 66, 80 and 94 in, then build and hang the gate from sheet F-501.",
+      "String deer wires at 66, 80 and 94 in.",
+      "Bolt a 2×8 beam to each face of the posts at the top (9 ft), then screw 2×4 rafter tails across it every 16 in.",
+      "Build and hang the gate from sheet F-501.",
     ],
   },
 };

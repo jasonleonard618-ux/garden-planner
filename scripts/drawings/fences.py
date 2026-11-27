@@ -36,7 +36,7 @@ def fence(tier):
     L, A, E = t["bay"], t["above"], t["embed"]
     foot = 6 if tier == "excellent" else 0
     depth = E + foot + 8
-    top = A + (15 if t["floppy"] else 0)
+    top = A + (15 if t["floppy"] or tier == "excellent" else 0)
     s = min(4.2, 470 / (top + depth + (L + 40) * 0.5))
     sc = Scene(s, 0, 0)
     cx, cy = sc.P(L / 2, 0, (top - depth) / 2)
@@ -77,7 +77,7 @@ def fence(tier):
     pw = 1.4 if t["post"] == "t" else 3.5
     ytop = pw / 2
     for x in (0, L):
-        sc.box(x - pw / 2, -pw / 2, 0, x + pw / 2, pw / 2, A + (3 if tier == "excellent" else 0), pal, "z" if t["post"] != "t" else None, 0.8)
+        sc.box(x - pw / 2, -pw / 2, 0, x + pw / 2, pw / 2, A + (12 if tier == "excellent" else 0), pal, "z" if t["post"] != "t" else None, 0.8)
     # post below grade, on the section face (right post is cut in half)
     sec = []
     if tier == "excellent":
@@ -131,13 +131,22 @@ def fence(tier):
         sc.box(x0, -1.75, 57.75, x1, 1.75, 59.25, WOOD, None)                # top rail
         for zz in (66, 80, 94):
             sc.add((0, 1.76, zz, L, 1.8, zz + 0.1), sc.line((0, 1.78, zz), (L, 1.78, zz), INK, 0.9))
+        # pergola: doubled 2x8 beam on both post faces, top flush with posts at 108; 2x4 rafter tails at 16 in
+        for y0 in (-3.25, 1.75):
+            sc.box(-12, y0, 100.75, L + 12, y0 + 1.5, 108, WOOD, "x")
+        xx = -8
+        while xx <= L + 8:
+            sc.box(xx - 0.75, -12, 108, xx + 0.75, 12, 111.5, WOOD, None)
+            xx += 16
     body = sc.render()
     # ----- dimensions -----
     d = Scene(s, sc.ox, sc.oy)
     d.dim((L, 0, 0), (L, 0, A), (14, 0, 0), ftin(A))
     d.dim((L, gy1, -E - foot), (L, gy1, 0), (0, 10, 0), ftin(E + foot) if tier != "excellent" else "36\" MIN")
     d.dim((0, pw / 2, 0), (0, ap, 0), (-12, 0, 0), ftin(ap))
-    zt = A + (3 if tier == "excellent" else 0)
+    if tier == "excellent":
+        d.dim((L, 0, 0), (L, 0, 108), (30, 0, 0), "9 FT POST")
+    zt = A + (32 if tier == "excellent" else 0)
     d.dim((0, 0, zt), (L, 0, zt), (0, 0, 10), ftin(L) + " O.C.")
     body += "".join(d.over)
     # ----- callouts -----
@@ -161,6 +170,8 @@ def fence(tier):
         C.append((8, "DEER WIRES 66, 80, 94 IN", P(L * 0.6, 1.78, 80), "R"))
         C.append((16, "2×4 TOP RAIL", P(L * 0.35, 1.75, 58.5), "L"))
         C.append((9, "6 IN GRAVEL BASE", P(L, 0, -E - 3), "R"))
+        C.append((10, "DOUBLED 2×8 PERGOLA BEAM", P(L * 0.3, 3.25, 104), "L"))
+        C.append((11, "2×4 RAFTER TAILS, 16 IN O.C.", P(L * 0.55, 6, 111.5), "R"))
     body += callouts(C, 205, 680, 130, H - 60)
     note = "BAY · " + ("6 FT" if tier == "excellent" else "8 FT")
     return frame(W, H, body, f"CUT-AWAY · FENCE · {t['name']}", "How the fence meets the ground",

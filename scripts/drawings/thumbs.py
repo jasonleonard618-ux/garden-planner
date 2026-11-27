@@ -1,7 +1,7 @@
 """Home page thumbnails: the same drawings with the title and footer dropped and the view cropped."""
 import re, sys, os
 out = sys.argv[1]
-for name, box in (("bed-better", "20 140 890 540"), ("fence-excellent", "40 160 860 560")):
+for name, box in (("bed-better", "20 140 890 540"), ("fence-excellent", "10 110 890 580")):
     s = open(os.path.join(out, f"{name}.svg")).read()
     s = re.sub(r'viewBox="[^"]+"', f'viewBox="{box}"', s, count=1)
     w, h = box.split()[2:]

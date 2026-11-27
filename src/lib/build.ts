@@ -39,7 +39,7 @@ export const FENCE_TIERS: Record<Tier, { name: string; keeps: string; heightIn: 
   good: { name: "Good", keeps: "Rabbits", heightIn: 24, maxBayFt: 8, summary: "2 ft of 1 in mesh on steel T-posts, with a 12 in apron along the ground outside.", src: "uga" },
   better: { name: "Better", keeps: "Rabbits, raccoons, groundhogs", heightIn: 48, maxBayFt: 8, summary: "4 ft welded wire with an 18 in floppy top and a 24 in buried or pinned apron.", src: "uga" },
   best: { name: "Best", keeps: "Deer, plus the above", heightIn: 96, maxBayFt: 8, summary: "8 ft deer fence on wood posts, with 1 in mesh along the bottom 2 ft and an apron.", src: "uga" },
-  excellent: { name: "Excellent", keeps: "Deer, plus the above", heightIn: 96, maxBayFt: 6, summary: "Cedar-framed cattle-panel bays with a kickboard, deer wires to 8 ft and an arbor gate.", src: "practical" },
+  excellent: { name: "Excellent", keeps: "Deer, plus the above", heightIn: 96, maxBayFt: 6, summary: "Cedar-framed cattle-panel bays with a kickboard, deer wires to 8 ft, a pergola beam along the top and a cedar gate.", src: "practical" },
 };
 
 export type FenceLayout = { sides: { ft: number; bays: number; bayFt: number; gate: boolean }[]; posts: number; perimeterFt: number; gateSide: number };
@@ -86,11 +86,15 @@ export function fenceLines(f: FenceLayout, tier: Tier): Line[] {
       ];
     case "excellent":
       return [
-        { item: "Cedar 4×4, 12 ft (8 ft up, 3 ft or more down)", qty: f.posts, unit: "posts", price: 60 },
+        { item: "Cedar 4×4, 12 ft (9 ft up, 3 ft down)", qty: f.posts, unit: "posts", price: 60, note: "Buy 14 ft posts if your frost depth is deeper than 36 in." },
         { item: "Cattle panel, 16 ft × 50 in", qty: Math.ceil(P / 16), unit: "panels", price: 40 },
         { item: "Cedar 2×4, 8 ft (frames, top rail)", qty: Math.ceil((P * 2) / 8), unit: "boards", price: 14 },
         { item: "Cedar 2×8, 8 ft (kickboard)", qty: Math.ceil(P / 8), unit: "boards", price: 30 },
         { item: "High-tensile wire for deer strands to 8 ft", qty: 1, unit: "roll", price: 60 },
+        { item: "Cedar 2×8, 12 ft (pergola beam, one each side of the posts)", qty: Math.ceil((P * 2) / 12), unit: "boards", price: 45 },
+        { item: "Cedar 2×4, 8 ft (rafter tails, 24 in long at 16 in apart)", qty: Math.ceil((P * 0.75) / 4), unit: "boards", price: 14 },
+        { item: "½ in × 8 in galvanized through-bolt, washers and nut", qty: f.posts * 2, unit: "sets", price: 4 },
+        { item: "Exterior screws for rafter tails, 3 in", qty: 1, unit: "box", price: 25 },
         { item: "Concrete for posts, 50 lb", qty: f.posts * 2, unit: "bags", price: 6 },
         { item: "Cedar gate with header, hinges and latch (sheet F-501)", qty: 1, unit: "gate", price: 350 },
       ];

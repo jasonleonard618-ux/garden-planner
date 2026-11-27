@@ -9,8 +9,8 @@ def Lr(x1, y1, x2, y2, c=INK, w=0.7, dash=None):
     d = f' stroke-dasharray="{dash}"' if dash else ""
     return f'<line x1="{f(x1)}" y1="{f(y1)}" x2="{f(x2)}" y2="{f(y2)}" stroke="{c}" stroke-width="{w}"{d}/>'
 
-def vdim(x, y1, y2, text):
-    m = (y1 + y2) / 2; w = len(text) * 6.4 + 8
+def vdim(x, y1, y2, text, m=None):
+    m = (y1 + y2) / 2 if m is None else m; w = len(text) * 6.4 + 8
     return (Lr(x, y1, x, y2, INK, 0.6) + Lr(x - 4, y1 + 4, x + 4, y1 - 4, INK, 0.9) + Lr(x - 4, y2 + 4, x + 4, y2 - 4, INK, 0.9) +
             f'<g transform="translate({f(x)},{f(m)}) rotate(-90)"><rect x="{f(-w/2)}" y="-7" width="{f(w)}" height="14" fill="#F7F5EF"/><text y="3.6" text-anchor="middle" font-family="{MONO}" font-size="10" fill="{INK}">{text}</text></g>')
 
@@ -29,10 +29,10 @@ def earth(x0, y0, x1, y1):
 
 
 def gate():
-    W, H = 900, 880
+    W, H = 900, 960
     s = 5.2
     gx = 300  # inside face of hinge post
-    g0 = 650  # grade y
+    g0 = 730  # grade y
     Y = lambda z: g0 - z * s
     X = lambda x: gx + x * s
     o = []
@@ -49,10 +49,14 @@ def gate():
     o.append(Lr(X(0), g0 + 5.5 * s + 3, X(48), g0 + 5.5 * s + 3, INK, 0.8, "4 3"))
     # posts
     for px in (-3.5, 48):
-        o.append(R(X(px), Y(96), 3.5 * s, 96 * s, WOOD["x"]))
+        o.append(R(X(px), Y(108), 3.5 * s, 108 * s, WOOD["x"]))
         o.append(Lr(X(px + 1.2), Y(94), X(px + 1.2), Y(2), WOOD["grain"], 0.45))
     # doubled header 2x8, top at 90
     o.append(R(X(-3.5), Y(90), 55 * s, 7.25 * s, WOOD["top"]))
+    # pergola beam (doubled 2x8, top flush with posts at 108) and 2x4 rafter tail ends at 16 in
+    o.append(R(X(-14), Y(108), 79 * s, 7.25 * s, WOOD["top"]))
+    for rx in (-8, 8, 24, 40, 56):
+        o.append(R(X(rx - 0.75), Y(111.5), 1.5 * s, 3.5 * s, WOOD["x"]))
     # deer wire at 81
     o.append(Lr(X(0), Y(81), X(48), Y(81), INK, 1.0))
     # gate frame 47 x 72, bottom 1 in above sill
@@ -89,9 +93,11 @@ def gate():
     # dims
     o.append(hdim(g0 + 140, X(0), X(48), '4\'-0" CLEAR'))
     o.append(vdim(X(64), Y(90), g0, '7\'-6"'))
+    o.append(vdim(X(72), Y(108), g0, '9\'-0"', Y(70)))
     o.append(vdim(X(58), Y(81), g0, '6\'-9"'))
     o.append(vdim(X(-14), Y(40), g0, '3\'-4"'))
     A = [
+        (19, "PERGOLA BEAM, SEE F-104", (X(20), Y(104.4)), "R"),
         (2, "DOUBLED 2×8 HEADER", (X(10), Y(86.4)), "L"),
         (1, "4×4 CEDAR GATE POST", (X(-1.75), Y(60)), "L"),
         (7, "STRAP HINGES (3)", (X(6), Y(fz1 - 1.75)), "L"),
