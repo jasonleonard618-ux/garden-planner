@@ -99,6 +99,7 @@ export const KIND_LABEL: Record<Kind, string> = {
 };
 
 export const SOURCES = {
+  isuRotation: { label: "Iowa State Extension, crop rotation in the vegetable garden (reviewed 2025)", href: "https://yardandgarden.extension.iastate.edu/how-to/crop-rotation-vegetable-garden" },
   isu: { label: "Iowa State Extension, vegetables in partial shade (2025)", href: "https://yardandgarden.extension.iastate.edu/faq/which-vegetables-will-grow-partial-shade" },
   csu: { label: "Colorado State Extension GardenNotes #713, block-style raised beds (reviewed 2023)", href: "https://extension.colostate.edu/resource/block-style-layout-in-raised-bed-vegetable-gardens/" },
   mu: { label: "University of Missouri Extension G6201, Table 1 (reviewed 2016)", href: "https://extension.missouri.edu/publications/g6201" },

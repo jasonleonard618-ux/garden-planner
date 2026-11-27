@@ -44,7 +44,7 @@ function squareUp(pts: LngLat[], p: LngLat): LngLat {
   return f.from([Math.cos(snapped) * len, Math.sin(snapped) * len]);
 }
 
-export type DrawMode = "idle" | "garden" | "structure" | "clear" | "tree" | "pin";
+export type DrawMode = "idle" | "garden" | "bed" | "structure" | "clear" | "tree" | "pin" | "bedpoint";
 
 type Props = {
   flyTo: { center: LngLat; zoom: number; key: number; padLeft?: number; padBottom?: number } | null;
@@ -151,10 +151,10 @@ export default function MapView(props: Props) {
     m.on("click", (e) => {
       const p = latest.current;
       const ll: LngLat = [e.lngLat.lng, e.lngLat.lat];
-      if (p.mode === "tree" || p.mode === "pin") return p.onPoint(ll);
+      if (p.mode === "tree" || p.mode === "pin" || p.mode === "bedpoint") return p.onPoint(ll);
       if (p.mode === "idle") return;
       const pts = draft.current;
-      if (p.shape === "rect" && p.mode === "garden") {
+      if (p.shape === "rect" && (p.mode === "garden" || p.mode === "bed")) {
         if (pts.length === 2) { draft.current = rectFrom(pts[0], pts[1], ll); return finish(); }
         pts.push(ll);
         return renderDraft();
@@ -167,15 +167,15 @@ export default function MapView(props: Props) {
       renderDraft();
     });
     m.on("dblclick", (e) => {
-      if (latest.current.mode !== "idle" && latest.current.mode !== "tree" && latest.current.mode !== "pin") {
+      if (latest.current.mode !== "idle" && latest.current.mode !== "tree" && latest.current.mode !== "pin" && latest.current.mode !== "bedpoint") {
         e.preventDefault();
         finish();
       }
     });
     m.on("mousemove", (e) => {
-      if (latest.current.mode === "idle" || latest.current.mode === "tree" || latest.current.mode === "pin" || !draft.current.length) return;
+      if (latest.current.mode === "idle" || latest.current.mode === "tree" || latest.current.mode === "pin" || latest.current.mode === "bedpoint" || !draft.current.length) return;
       const p = latest.current, ll: LngLat = [e.lngLat.lng, e.lngLat.lat], pts = draft.current;
-      if (p.shape === "rect" && p.mode === "garden" && pts.length === 2) return renderDraft(undefined, rectFrom(pts[0], pts[1], ll));
+      if (p.shape === "rect" && (p.mode === "garden" || p.mode === "bed") && pts.length === 2) return renderDraft(undefined, rectFrom(pts[0], pts[1], ll));
       renderDraft(p.square && p.shape !== "rect" ? squareUp(pts, ll) : ll);
     });
 

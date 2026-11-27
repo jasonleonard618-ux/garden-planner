@@ -759,3 +759,27 @@ a.btn { text-decoration: none; display: inline-block; }
   .study-slider { flex-basis: 100%; order: 3; }
   .study-lit { margin-left: auto; } .study-lit b { font-size: 24px; }
 }
+
+/* ---------- returning gardener road ---------- */
+.road { display: flex; flex-direction: column; gap: 10px; }
+.road h2 { margin: 0; font-size: 17px; font-weight: 600; }
+.road-options { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.road-card { display: flex; flex-direction: column; gap: 4px; text-align: left; padding: 14px; min-height: 112px; border-radius: 16px; border: 1px solid var(--line); background: #fff; color: var(--teal); cursor: pointer; font: inherit; }
+.road-card b { font-family: "Instrument Serif", Georgia, serif; font-weight: 400; font-size: 22px; line-height: 1.05; }
+.road-card span { font-size: 12.5px; line-height: 1.4; opacity: 0.85; }
+.road-card:hover, .road-card:focus-visible { border-color: #FF6F47; box-shadow: 0 0 0 2px rgba(255,111,71,0.35); }
+.road-note { display: flex; flex-direction: column; gap: 6px; }
+.have-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.have-tools .mini { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; }
+.have-tools .mini input { width: 52px; padding: 6px; border: 1px solid var(--line); border-radius: 8px; font: inherit; }
+.mybeds { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.mybeds li { display: grid; grid-template-columns: 26px 1fr 78px 60px auto; align-items: center; gap: 8px; font-size: 13px; }
+.mybeds select, .lastyear select { padding: 5px 6px; border: 1px solid var(--line); border-radius: 8px; font: inherit; font-size: 13px; background: #fff; color: var(--teal); }
+.lastyear { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.lastyear li { display: flex; flex-direction: column; gap: 6px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+.ly-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.chip.fam { display: inline-flex; align-items: center; gap: 6px; }
+.chip.fam i { width: 9px; height: 9px; border-radius: 5px; display: inline-block; }
+.chip.fam small { opacity: 0.7; font-weight: 400; }
+.bed-was { display: block; font-size: 11px; opacity: 0.75; margin: -2px 0 4px; }
+@media (max-width: 760px) { .road-options { grid-template-columns: 1fr; } .road-card { min-height: 0; } .mybeds li { grid-template-columns: 26px 1fr 70px auto; } .mybeds .bed-h { display: none; } }

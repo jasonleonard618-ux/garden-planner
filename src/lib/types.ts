@@ -75,6 +75,11 @@ export type TerrainStats = {
   facing: string | null;
 };
 
+/** A bed the person already has (returning gardener road). history: crop ids by year, e.g. { "2026": ["tomato"] }. */
+export type BedKind = "raised" | "metal" | "inground" | "perennial" | "pots";
+export type MyBed = { id: string; n: number; ring: LngLat[]; center: LngLat; kind: BedKind; history: Record<string, string[]> };
+export type Road = "new" | "have";
+
 export type SiteProfile = {
   id: string;
   name: string;
@@ -87,6 +92,8 @@ export type SiteProfile = {
   picks?: string[];
   build?: { bed: string; fence: string; drip: boolean };
   goals?: { people: number; use: "fresh" | "preserve"; beds: number | null; fill: boolean };
+  road?: Road;
+  myBeds?: MyBed[];
   summary: {
     areaSqFt?: number;
     perimeterFt?: number;
