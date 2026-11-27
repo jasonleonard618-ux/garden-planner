@@ -674,7 +674,7 @@ a.btn { text-decoration: none; display: inline-block; }
 .opt-sw { display: block; }
 .sw-mat-cedar { background: repeating-linear-gradient(180deg, #C98F55 0 14px, #B67C45 14px 15px); }
 .sw-mat-pine { background: repeating-linear-gradient(180deg, #E6C88F 0 14px, #CFAF73 14px 15px); }
-.sw-mat-steel { background: repeating-linear-gradient(90deg, #A9AEAA 0 9px, #8B918C 9px 11px); }
+.sw-mat-tank { background: repeating-linear-gradient(90deg, #C9CFCB 0 6px, #9AA19D 6px 7px); border-radius: 999px / 40%; }
 .sw-mat-ground { background: linear-gradient(180deg, #7E9465 0 30%, #5E4535 30%); }
 .sw-path-chips { background: #B88D5E radial-gradient(#8C6339 1.4px, transparent 1.6px) 0 0 / 12px 12px; }
 .sw-path-gravel { background: #CFCBC2 radial-gradient(#9A958B 2.6px, transparent 3px) 0 0 / 11px 11px; }

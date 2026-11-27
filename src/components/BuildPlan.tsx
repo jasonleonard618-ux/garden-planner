@@ -3,7 +3,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type { Bed } from "@/lib/beds";
 import type { Plan } from "@/lib/layout";
-import { MATS, PATHS, BED_TIERS, bedLinesFor, pathLines, soakerLines, type BedMat, type PathKind, type Water, dripLines, fenceLayout, fenceLines, FENCE_TIERS, total, type Line, type Tier } from "@/lib/build";
+import { MATS, matOf, PATHS, BED_TIERS, bedLinesFor, pathLines, soakerLines, type BedMat, type PathKind, type Water, dripLines, fenceLayout, fenceLines, FENCE_TIERS, total, type Line, type Tier } from "@/lib/build";
 import { measure } from "@/lib/geo";
 import { SRC } from "@/data/sources";
 import { SourceLink } from "./GrowTools";
@@ -26,8 +26,8 @@ export function useBuild(garden: LngLat[] | null, beds: Bed[], c: BuildChoices) 
     const fl = c.fence !== "none" ? fenceLayout(garden, sideFt, FENCE_TIERS[c.fence].maxBayFt) : null;
     const ys = garden.map((p) => p[1]);
     const lengthFt = ((Math.max(...ys) - Math.min(...ys)) * 110574) * 3.28084;
-    const mat = c.mat ?? "cedar";
-    const groups: { title: string; lines: Line[] }[] = [{ title: `Beds (${beds.length}), ${MATS[mat].name.toLowerCase()}, ${BED_TIERS[c.bed].name}`, lines: bedLinesFor(beds.length, c.bed, mat) }];
+    const mat = matOf(c.mat);
+    const groups: { title: string; lines: Line[] }[] = [{ title: MATS[mat].own ? `Beds (${beds.length}), stock tanks, 2 per bed` : `Beds (${beds.length}), ${MATS[mat].name.toLowerCase()}, ${BED_TIERS[c.bed].name}`, lines: bedLinesFor(beds.length, c.bed, mat) }];
     const pathSq = m.areaSqFt - beds.length * 32;
     const pl = pathLines(c.path ?? "chips", pathSq);
     if (pl.length) groups.push({ title: `Paths, ${PATHS[c.path ?? "chips"].name.toLowerCase()}`, lines: pl });
@@ -363,9 +363,11 @@ export function BuildPlanSheets({ name, garden, beds, ends, plan, choices, onClo
   const cap = (w: string) => w[0].toUpperCase() + w.slice(1);
   const b = useBuild(garden, beds, choices)!;
   const fence = !!b.fl && choices.fence !== "none";
+  const mat = matOf(choices.mat);
+  const bedSheet = MATS[mat].own ? "B-104" : `B-10${BED_NO[choices.bed]}`;
   const index: [string, string][] = [
     ["A-101", "Site and planting plan"],
-    ...(MATS[choices.mat ?? "cedar"].drawn ? [[`B-10${BED_NO[choices.bed]}`, `Bed, ${BED_TIERS[choices.bed].name.toLowerCase()}`]] as [string, string][] : []),
+    ...(MATS[mat].drawn ? [[bedSheet, MATS[mat].own ? "Bed, stock tank" : `Bed, ${BED_TIERS[choices.bed].name.toLowerCase()}`]] as [string, string][] : []),
     ...(fence ? [["F-100", "Fence layout"], [`F-10${FENCE_NO[choices.fence as Tier]}`, `Fence, ${FENCE_TIERS[choices.fence as Tier].name.toLowerCase()}`]] as [string, string][] : []),
     ...(fence && choices.fence === "excellent" ? [["F-501", "Gate details"]] as [string, string][] : []),
     ...(choices.drip ? [["D-101", "Drip plan"]] as [string, string][] : []),
@@ -408,7 +410,7 @@ export function BuildPlanSheets({ name, garden, beds, ends, plan, choices, onClo
         <p className="sheet-note">{beds.length} beds, 4 × 8 ft, long sides {ends[0] === "north" ? "roughly north to south" : "roughly east to west"}, {trimmed ? "with a 1½ ft walking edge inside the dashed line, which is the fenced garden" : "kept 1½ ft in from the outline"}.{b.fl ? " Squares are fence posts." : ""} Plants are drawn at Extension spacing; crops planted closer than 6 in show as a fill, not one symbol per plant. Paler plants get less sun than they like.</p>
         <TitleBlock no="A-101" title="Site plan" name={name} />
       </section>
-      {MATS[choices.mat ?? "cedar"].drawn && <CdSheet no={`B-10${BED_NO[choices.bed]}`} name={name} index={index} />}
+      {MATS[mat].drawn && <CdSheet no={bedSheet} name={name} index={index} />}
       {fence && (
         <section className="sheet" id="sheet-F-100">
           <h2>Fence layout, {FENCE_TIERS[choices.fence as Tier].name.toLowerCase()}</h2>
