@@ -23,7 +23,7 @@ export function bedLines(n: number, tier: keyof typeof BED_TIERS): Line[] {
   const soilCuFt = 4 * 8 * (heightIn / 12) * n;
   const lines: Line[] = [
     { item: "Cedar 2×10, 8 ft", qty: 3 * t.courses * n, unit: "boards", price: 42, note: "Per course: two sides, plus one board cut into the two 45 in ends." },
-    { item: "Cedar 4×4, 8 ft (corner posts)", qty: Math.ceil((4 * n * (heightIn + 2)) / 96), unit: "posts", price: 30, note: `Cut into four ${Math.round(heightIn + 2)} in posts per bed.` },
+    { item: "Cedar 4×4, 8 ft (corner posts)", qty: Math.ceil((4 * n * (heightIn + 2)) / 96), unit: "posts", price: 30, note: `Cut into four ${Math.floor(heightIn + 2)} in posts per bed.` },
     { item: "Exterior screws, 3 in", qty: Math.ceil((n * t.courses * 16) / 75), unit: "boxes of 75", price: 12 },
   ];
   if (t.cap) lines.push({ item: "Cedar 2×6, 8 ft (cap)", qty: 3 * n, unit: "boards", price: 24 });
@@ -86,13 +86,13 @@ export function fenceLines(f: FenceLayout, tier: Tier): Line[] {
       ];
     case "excellent":
       return [
-        { item: "Cedar 4×4, 10 ft", qty: f.posts, unit: "posts", price: 45 },
+        { item: "Cedar 4×4, 12 ft (8 ft up, 3 ft or more down)", qty: f.posts, unit: "posts", price: 60 },
         { item: "Cattle panel, 16 ft × 50 in", qty: Math.ceil(P / 16), unit: "panels", price: 40 },
         { item: "Cedar 2×4, 8 ft (frames, top rail)", qty: Math.ceil((P * 2) / 8), unit: "boards", price: 14 },
         { item: "Cedar 2×8, 8 ft (kickboard)", qty: Math.ceil(P / 8), unit: "boards", price: 30 },
         { item: "High-tensile wire for deer strands to 8 ft", qty: 1, unit: "roll", price: 60 },
         { item: "Concrete for posts, 50 lb", qty: f.posts * 2, unit: "bags", price: 6 },
-        { item: "Arbor gate, built from cedar", qty: 1, unit: "gate", price: 350 },
+        { item: "Cedar gate with header, hinges and latch (sheet F-501)", qty: 1, unit: "gate", price: 350 },
       ];
   }
 }
@@ -109,6 +109,60 @@ export function dripLines(beds: number, mainFt: number): Line[] {
     { item: "Tee and ½ in riser per bed", qty: beds, unit: "sets", price: 4 },
     { item: "Emitter tubing, 12 in spacing", qty: Math.ceil((beds * 3 * 8) / 50), unit: "rolls of 50 ft", price: 22, note: "Three 8 ft lines per bed." },
     { item: "Fittings, end caps and stakes", qty: beds, unit: "bed kits", price: 6 },
+  ];
+}
+
+// ---------- options: bed material, paths, other watering (rough, practical-choice prices) ----------
+
+export type BedMat = "cedar" | "pine" | "steel" | "ground";
+export type PathKind = "chips" | "gravel" | "cardboard" | "grass";
+export type Water = "drip" | "soaker" | "hand";
+
+export const MATS: Record<BedMat, { name: string; sub: string; life: string; drawn: boolean }> = {
+  cedar: { name: "Cedar", sub: "Rot-resistant heartwood. Looks the best.", life: "10–15 yrs", drawn: true },
+  pine: { name: "Pine", sub: "Cheapest wood. Untreated, so it rots sooner.", life: "3–5 yrs", drawn: true },
+  steel: { name: "Steel kit", sub: "Galvanized panels that bolt together.", life: "20+ yrs", drawn: false },
+  ground: { name: "In the ground", sub: "No frame. Dig, amend and mound the soil.", life: "More weeding", drawn: false },
+};
+export const PATHS: Record<PathKind, { name: string; sub: string; tag: string }> = {
+  chips: { name: "Wood chips", sub: "Often free from tree services. Top up yearly.", tag: "Soft underfoot" },
+  gravel: { name: "Pea gravel", sub: "Permanent and tidy, with fabric under it.", tag: "Low upkeep" },
+  cardboard: { name: "Cardboard + chips", sub: "Smothers the grass without digging.", tag: "No digging" },
+  grass: { name: "Keep the grass", sub: "Mow between the beds.", tag: "Mowing" },
+};
+export const WATERS: Record<Water, { name: string; sub: string; tag: string }> = {
+  drip: { name: "Drip + timer", sub: "Lines under the mulch, on a timer.", tag: "Set and forget" },
+  soaker: { name: "Soaker hoses", sub: "Cheaper; you turn them on.", tag: "Low cost" },
+  hand: { name: "By hand", sub: "A hose or can, most days in July.", tag: "Daily chore" },
+};
+
+/** Material swaps for the cedar bed list. Pine uses the same sizes; steel and in-ground replace the frame. */
+export function bedLinesFor(n: number, tier: keyof typeof BED_TIERS, mat: BedMat): Line[] {
+  const base = bedLines(n, tier);
+  if (mat === "cedar") return base;
+  if (mat === "pine") return base.map((l) => l.item.startsWith("Cedar") ? { ...l, item: l.item.replace("Cedar", "Untreated pine"), price: Math.round(l.price * 0.45) } : l);
+  const soil = base.filter((l) => l.item.startsWith("Raised-bed soil") || l.item.startsWith("6 mil"));
+  if (mat === "steel") return [{ item: `Galvanized steel bed kit, 4 × 8 ft, ${BED_TIERS[tier].courses > 1 ? "17" : "11"} in tall`, qty: n, unit: "kits", price: BED_TIERS[tier].courses > 1 ? 150 : 110, note: "Follow the kit's own assembly sheet." }, ...soil.filter((l) => !l.item.startsWith("6 mil"))];
+  return [{ item: "Compost to dig in, 3 in over each bed", qty: Math.ceil(((n * 32 * 0.25) / 27) * 10) / 10, unit: "cu yd", price: 45, note: "Mound beds about 6 in high; no frame." }];
+}
+
+export function pathLines(kind: PathKind, sqft: number): Line[] {
+  const a = Math.max(0, Math.round(sqft));
+  if (kind === "grass" || a === 0) return [];
+  const yd = (inches: number) => Math.ceil(((a * inches) / 12 / 27) * 10) / 10;
+  if (kind === "gravel") return [
+    { item: "Landscape fabric, 3 × 50 ft", qty: Math.ceil(a / 150), unit: "rolls", price: 25 },
+    { item: "Pea gravel, 2 in deep", qty: yd(2), unit: "cu yd", price: 55, note: `${a} sq ft of path.` },
+  ];
+  const chips = { item: "Wood chips, 3 in deep", qty: yd(3), unit: "cu yd", price: 0, note: `${a} sq ft of path. Often free from tree services; about $35/cu yd if you buy them.` };
+  if (kind === "cardboard") return [{ item: "Plain brown cardboard, tape removed", qty: Math.ceil(a / 20), unit: "boxes", price: 0, note: "Overlap the edges 6 in." }, chips];
+  return [chips];
+}
+
+export function soakerLines(beds: number): Line[] {
+  return [
+    { item: "Soaker hose, 25 ft", qty: beds, unit: "hoses", price: 12, note: "Snake one through each bed." },
+    { item: "Garden hose splitter + lead hose", qty: 1, unit: "", price: 30 },
   ];
 }
 

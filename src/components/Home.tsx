@@ -4,12 +4,13 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { LogoStacked, Wordmark } from "./Logo";
+import { CROPS } from "@/data/crops";
 
 const STEPS = [
   { n: "01", tag: "Site", title: "Find the sunniest spot", body: "We trace shade from your house, trees and fences across a whole day in spring, summer and late summer, using a government height survey of your block.", art: "site" },
   { n: "02", tag: "Grow", title: "Pick what grows there", body: "Crops are matched to your sun and frost dates. Pairings are only suggested when field trials back them, with the source attached.", art: "grow" },
   { n: "03", tag: "Layout", title: "Lay out the beds", body: "A planting plan you can tap through. Turn a column into a wide walkway and the plant list updates.", art: "layout" },
-  { n: "04", tag: "Build", title: "Build it, good to excellent", body: "Drawings, cut lists, fence and footing details, with a price for each level.", art: "build" },
+  { n: "04", tag: "Build", title: "Build it, good to excellent", body: "Exploded drawings, cut lists, fence cut-aways and footing details, with a price for each level.", art: "build" },
 ] as const;
 
 export default function Home({ skipIntro }: { skipIntro?: boolean }) {
@@ -139,31 +140,33 @@ function AddressForm() {
   );
 }
 
+const PEPPER_SUN = CROPS.find((c) => c.id === "pepper")?.sun ?? 6;
+
+/** The storyboard pictures for each step: sample yard photo, trial-backed pairings, the hand-drawn plan, build drawings. */
 function Art({ kind }: { kind: string }) {
-  if (kind === "site") return <div className="art-yard"><span className="sun-blob" /><span className="art-chip">Best spot · June</span></div>;
+  if (kind === "site")
+    return (
+      <div className="art-yard">
+        <span className="art-glow" />
+        <span className="art-spot"><small>SPOT A · JUNE</small><b>14.4 hrs</b></span>
+        <span className="art-sample">Sample yard</span>
+      </div>
+    );
   if (kind === "grow")
     return (
       <ul className="art-tags">
-        <li><b>Tomato + basil</b><i className="t-ok">Backed by trials</i></li>
-        <li><b>Lettuce + alyssum</b><i className="t-ok">Backed by trials</i></li>
-        <li><b>Strawberries</b><i className="t-plain">Single crop</i></li>
+        <li><span><b>Tomato + basil</b><small>Fewer thrips and whiteflies in a field trial</small></span><i className="t-ok">Backed by trials</i></li>
+        <li><span><b>Lettuce + sweet alyssum</b><small>Hoverflies eat the aphids</small></span><i className="t-ok">Backed by trials</i></li>
+        <li><span><b>Strawberries</b><small>No proven companion, so they grow alone</small></span><i className="t-plain">Single crop</i></li>
+        <li><span><b>Peppers</b><small>Need {PEPPER_SUN}+ hrs of sun; this spot has 11</small></span><i className="t-ok">Fits your sun</i></li>
       </ul>
     );
-  if (kind === "layout")
-    return (
-      <svg viewBox="0 0 200 120" width="100%" height="100%">
-        {[0, 1, 2, 3].map((c) => [0, 1].map((r) => (
-          <g key={`${c}${r}`}>
-            <rect x={14 + c * 46} y={12 + r * 54} width="36" height="46" rx="4" fill={c === 2 ? "transparent" : "#E6F3EC"} stroke={c === 2 ? "#BFE3D0" : "#145049"} strokeDasharray={c === 2 ? "4 3" : undefined} />
-            {c !== 2 && [0, 1, 2].map((k) => <circle key={k} cx={32 + c * 46} cy={22 + r * 54 + k * 13} r="4.5" fill={["#FF6F47", "#6FB08A", "#F2B544"][(c + r + k) % 3]} />)}
-          </g>
-        )))}
-        <text x="120" y="72" textAnchor="middle" fontSize="8" fill="#4E5F5B" transform="rotate(-90 120 66)">walkway</text>
-      </svg>
-    );
+  if (kind === "layout") return <div className="art-plan" role="img" aria-label="Hand-drawn planting plan with an 8 ft walkway" />;
   return (
-    <div className="art-tiers">
-      {["Good", "Better", "Best", "Excellent"].map((t, i) => <span key={t} style={{ height: 34 + i * 18 }}>{t}</span>)}
+    <div className="art-draw">
+      <img src="/drawings/bed-better-thumb.svg" alt="Exploded drawing of a raised bed" />
+      <img src="/drawings/fence-excellent-thumb.svg" alt="Cut-away drawing of the excellent fence" />
+      <span className="art-tiers">{["Good", "Better", "Best", "Excellent"].map((t) => <span key={t}>{t}</span>)}</span>
     </div>
   );
 }

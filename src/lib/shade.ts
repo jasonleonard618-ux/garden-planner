@@ -157,3 +157,59 @@ export function gridCorners(bounds: [number, number, number, number]): [LngLat, 
   const [x0, y0, x1, y1] = bounds;
   return [fromMerc([x0, y1]), fromMerc([x1, y1]), fromMerc([x1, y0]), fromMerc([x0, y0])];
 }
+
+// ---------- sun study: where the shadows fall at one moment ----------
+
+export type Prepared = { cols: number; rows: number; cell: number; surface: number[]; ground: number[]; kind: number[]; maxZ: number };
+
+export function prepare(input: Pick<ShadeInput, "grid" | "objects">): Prepared {
+  const { surface, ground, kind } = applyObjects(input as ShadeInput);
+  let maxZ = -Infinity;
+  for (const s of surface) if (s > maxZ) maxZ = s;
+  const { cols, rows, cell } = input.grid;
+  return { cols, rows, cell, surface, ground, kind: kind as number[], maxZ };
+}
+
+/** Light reaching each cell at one instant: 1 in sun, 0 in shadow, between for bare branches. */
+export function lightAt(p: Prepared, when: Date, lat: number, lon: number, leafOff: boolean): Float32Array | null {
+  const pos = SunCalc.getPosition(when, lat, lon);
+  if (pos.altitude < 0.035) return null;
+  const { cols, rows, cell, surface, ground, kind, maxZ } = p;
+  const bearing = pos.azimuth + Math.PI;
+  const dc = Math.sin(bearing), dr = -Math.cos(bearing);
+  const rise = Math.tan(pos.altitude) * cell;
+  const out = new Float32Array(cols * rows);
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const i = r * cols + c;
+      const z0 = ground[i] + OBSERVER_M;
+      let light = 1;
+      for (let s = 1; ; s++) {
+        const need = z0 + s * rise;
+        if (need > maxZ) break;
+        const cc = Math.round(c + dc * s), rr = Math.round(r + dr * s);
+        if (cc < 0 || rr < 0 || cc >= cols || rr >= rows) break;
+        const j = rr * cols + cc;
+        if (surface[j] > need) {
+          if (leafOff && kind[j] === 2) { light *= 0.8; if (light < 0.1) { light = 0; break; } }
+          else { light = 0; break; }
+        }
+      }
+      out[i] = light;
+    }
+  }
+  return out;
+}
+
+/** US clock offset from UTC by longitude band, daylight saving on (all three study dates fall in it). */
+export function clockOffsetHours(lon: number) {
+  const std = lon > -87.5 ? -5 : lon > -101.5 ? -6 : lon > -114.5 ? -7 : lon > -140 ? -8 : -9;
+  return std + 1;
+}
+
+export function dayWindow(season: Season, year: number, lat: number, lon: number) {
+  const { month, day } = SEASON_DATES[season];
+  const noon = new Date(Date.UTC(year, month, day, 12 - Math.round(lon / 15)));
+  const t = SunCalc.getTimes(noon, lat, lon);
+  return { rise: t.sunrise, set: t.sunset };
+}

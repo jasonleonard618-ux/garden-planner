@@ -16,6 +16,9 @@ export const SRC = {
   umdFall: { label: "UMD Extension: Cleaning up the vegetable garden in fall", href: "https://marylandgrows.umd.edu/2023/11/03/cleaning-up-the-vegetable-garden-in-fall/" },
   oregonTomato: { label: "Oregon State Extension: Tomato diseases", href: "https://extension.oregonstate.edu/news/understanding-tomato-diseases-helps-gardeners-grow-confidence" },
   ugaFence: { label: "UGA Extension C1027-9: Garden fencing", href: "https://fieldreport.caes.uga.edu/publications/C1027-9/garden-fencing/" },
+  umdBeds: { label: "UMD Extension: Safety of materials for raised beds (2024)", href: "https://extension.umd.edu/resource/safety-materials-used-building-raised-beds" },
+  askBeds: { label: "Ask Extension: Safe ways to protect raised beds", href: "https://ask.extension.org/kb/faq.php?id=302640" },
+  fplChar: { label: "USDA Forest Products Lab: Durability of charred wood (2021)", href: "https://www.fpl.fs.usda.gov/documnts/pdf2021/fpl_2021_hasburgh002.pdf" },
   call811: { label: "Call 811 before you dig", href: "https://call811.com/" },
   noaa: { label: "NOAA U.S. Climate Normals 1991–2020", href: "https://www.ncei.noaa.gov/products/land-based-station/us-climate-normals" },
 } as const;

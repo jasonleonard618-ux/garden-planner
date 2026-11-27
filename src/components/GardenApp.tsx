@@ -4,7 +4,7 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fmt, measure, ringBbox, ringCenter, slopeAdvice, terrainStats, toMerc, uid } from "@/lib/geo";
-import { gridCorners, SEASON_DATES, sunColor } from "@/lib/shade";
+import { clockOffsetHours, dayWindow, gridCorners, lightAt, prepare, SEASON_DATES, sunColor } from "@/lib/shade";
 import { deleteSite, downloadSite, listSites, readSiteFile, saveSite } from "@/lib/storage";
 import type { LngLat, Place, Season, SiteData, SiteObject, SiteProfile, SunStats, SurfaceGrid, Terrain, TerrainStats } from "@/lib/types";
 import type { DraftApi, DrawMode } from "./MapView";
@@ -12,7 +12,8 @@ import WindRose from "./WindRose";
 import { Wordmark } from "./Logo";
 import { Checklist, LocalNotes, Problems, Timeline, type ToolView } from "./GrowTools";
 import { guideFor, type RegionGuide } from "@/data/regions";
-import { BuildPlanSheets, BuildStep, type BuildChoices } from "./BuildPlan";
+import { BuildPlanSheets, type BuildChoices } from "./BuildPlan";
+import { BuildStudio } from "./BuildStudio";
 import { DEFAULT_GOALS, GoalsStep, type Goals } from "./GoalsStep";
 import { sizeGarden } from "@/lib/sizing";
 import { Feedback, listAccountPlans, saveToAccount, SignIn, useSession } from "./Account";
@@ -244,6 +245,63 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
     return { url: canvas.toDataURL(), corners: gridCorners(g.bounds) };
   }, [sun, grid]);
 
+  // ---------- sun study: shadows at one moment, with a time slider ----------
+  const [study, setStudy] = useState(false);
+  const [studyMin, setStudyMin] = useState<number | null>(null); // minutes after sunrise
+  const [playing, setPlaying] = useState(false);
+  const prepared = useMemo(() => {
+    if (!study || grid.state !== "done") return null;
+    const g = grid.data;
+    return prepare({ grid: { cols: g.cols, rows: g.rows, bounds: g.bounds, cell: g.cell, surface: g.surface, ground: g.ground, kind: g.kind }, objects });
+  }, [study, grid, objects]);
+  const win = useMemo(() => {
+    if (grid.state !== "done") return null;
+    const c = gridCenter(grid.data);
+    const w = dayWindow(season, YEAR, c[1], c[0]);
+    if (!w.rise || !w.set) return null;
+    return { rise: w.rise.getTime(), span: Math.round((w.set.getTime() - w.rise.getTime()) / 60000), lat: c[1], lon: c[0] };
+  }, [grid, season]);
+  const minute = win ? Math.min(win.span, studyMin ?? Math.round(win.span * 0.62)) : 0;
+  useEffect(() => {
+    if (!playing || !win) return;
+    const t = setInterval(() => setStudyMin((m) => { const v = (m ?? Math.round(win.span * 0.62)) + 8; return v > win.span ? 0 : v; }), 110);
+    return () => clearInterval(t);
+  }, [playing, win]);
+  const studyShot = useMemo(() => {
+    if (!study || !prepared || !win || grid.state !== "done") return null;
+    const g = grid.data;
+    const light = lightAt(prepared, new Date(win.rise + minute * 60000), win.lat, win.lon, SEASON_DATES[season].leafOff);
+    const canvas = document.createElement("canvas");
+    canvas.width = g.cols; canvas.height = g.rows;
+    const ctx = canvas.getContext("2d")!;
+    const img = ctx.createImageData(g.cols, g.rows);
+    let lit = 0, n = 0;
+    const poly = garden ? garden.map(toMerc) : null;
+    const step = (g.bounds[2] - g.bounds[0]) / g.cols;
+    for (let i = 0; i < g.cols * g.rows; i++) {
+      const v = light ? light[i] : 0;
+      img.data.set(v >= 0.99 ? [255, 200, 120, 26] : [6, 24, 34, Math.round(150 * (1 - v)) + 20], i * 4);
+      if (poly) {
+        const r = Math.floor(i / g.cols), c = i % g.cols;
+        if (pointInPoly(g.bounds[0] + (c + 0.5) * step, g.bounds[3] - (r + 0.5) * step, poly)) { n++; lit += v; }
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    // soften the 1 m cells so shadow edges read as shadows, not pixels
+    const K = 4, big = document.createElement("canvas");
+    big.width = g.cols * K; big.height = g.rows * K;
+    const bx = big.getContext("2d")!;
+    bx.imageSmoothingEnabled = true; bx.filter = `blur(${K * 0.6}px)`;
+    bx.drawImage(canvas, 0, 0, big.width, big.height);
+    const clock = new Date(win.rise + minute * 60000 + clockOffsetHours(win.lon) * 3600000);
+    const h = clock.getUTCHours(), mm = clock.getUTCMinutes();
+    return {
+      overlay: { url: big.toDataURL(), corners: gridCorners(g.bounds) },
+      litPct: n ? Math.round((lit / n) * 100) : null,
+      time: `${((h + 11) % 12) + 1}:${String(mm).padStart(2, "0")}`, ampm: h < 12 ? "AM" : "PM",
+    };
+  }, [study, prepared, win, minute, grid, garden, season]);
+
   const sunStats: SunStats | null = useMemo(() => {
     if (!sun || !garden || grid.state !== "done") return null;
     const g = grid.data;
@@ -425,8 +483,8 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
           imagery={imagery}
           garden={garden}
           objects={objects}
-          overlay={overlay}
-          overlayVisible={overlayVisible && (step === 1 || step === 3)}
+          overlay={study && step === 1 && studyShot ? studyShot.overlay : overlay}
+          overlayVisible={(study && step === 1 && !!studyShot) || (overlayVisible && (step === 1 || step === 3))}
           marker={place && !garden ? [place.lon, place.lat] : null}
           mode={mode}
           onRingComplete={onRingComplete}
@@ -447,7 +505,10 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
             <button className={imagery === "esri" ? "on" : ""} onClick={() => setImagery("esri")}>Esri satellite</button>
           </div>
         </div>
-        {overlay && overlayVisible && (step === 1 || step === 3) && (
+        {study && step === 1 && studyShot && win && (
+          <div className="map-ui study-bar glass"><StudyBar shot={studyShot} minute={minute} span={win.span} setMinute={(m) => { setPlaying(false); setStudyMin(m); }} playing={playing} setPlaying={setPlaying} riseLabel={clockLabel(win.rise, win.lon)} setLabel={clockLabel(win.rise + win.span * 60000, win.lon)} /></div>
+        )}
+        {overlay && overlayVisible && !(study && step === 1) && (step === 1 || step === 3) && (
           <div className="map-ui bottom-right legend glass">
             <span>Direct sun, {SEASON_SHORT[season].toLowerCase()}</span>
             <div className="ramp" />
@@ -559,6 +620,16 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
               ))}
             </div>
             <p className="muted small">{SEASON_DATES[season].label}</p>
+            {grid.state === "done" && win && (
+              <div className={study ? "study-card on" : "study-card"}>
+                <div className="study-head">
+                  <span><b>Sun study</b><small>Watch the shadows move across your yard, hour by hour.</small></span>
+                  <button className={study ? "btn" : "btn primary"} onClick={() => { setStudy((v) => !v); setPlaying(!study); }}>{study ? "Show sun hours" : "▶ Watch the light move"}</button>
+                </div>
+                {study && studyShot && <div className="study-inline"><StudyBar shot={studyShot} minute={minute} span={win.span} setMinute={(m) => { setPlaying(false); setStudyMin(m); }} playing={playing} setPlaying={setPlaying} riseLabel={clockLabel(win.rise, win.lon)} setLabel={clockLabel(win.rise + win.span * 60000, win.lon)} /></div>}
+                {study && <p className="muted small">Shadows come from the measured height of every roof and tree. Times are clock time with daylight saving.</p>}
+              </div>
+            )}
             {grid.state === "loading" && <Busy text="Measuring trees and buildings near you…" />}
             {(grid.state === "loading" || (grid.state === "done" && sunBusy)) && <p className="muted small">This takes 10 to 30 seconds. We read the government height survey for your block, then trace the sun every few minutes from sunrise to sunset.</p>}
             {grid.state === "error" && <p className="warn">Couldn&apos;t load height data ({grid.message}). <button className="link" onClick={() => place && loadGrid(garden ? ringCenter(garden) : [place.lon, place.lat])}>Try again</button></p>}
@@ -731,7 +802,7 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
           <PlantsStep onTimeline={() => { setGrowTab("timeline"); go(7); }} picks={picks} setPicks={setPicks} bestSun={bestSun} frost={frost} kind={kindFilter} setKind={setKindFilter} bedSuns={bedSuns} state={siteState} />
         )}
         {step === 5 && <LayoutStep plan={plan} picks={picks} onPick={() => go(4)} ends={fit?.ends ?? ["north", "south"]} />}
-        {step === 6 && area && fit && <BuildStep garden={area} trimmed={area !== garden} beds={fit.beds} choices={build} setChoices={setBuild} onOpen={() => setSheets(true)} />}
+        {step === 6 && area && fit && <BuildStudio garden={area} trimmed={area !== garden} beds={fit.beds} choices={build} setChoices={setBuild} onOpen={() => setSheets(true)} />}
 
         {step === 7 && (
           <>
@@ -1283,3 +1354,27 @@ function AddressSearch({ onPick, initial = "", onDropPin }: { onPick: (p: Place)
   );
 }
 
+
+function clockLabel(t: number, lon: number) {
+  const d = new Date(t + clockOffsetHours(lon) * 3600000);
+  const h = d.getUTCHours();
+  return `${((h + 11) % 12) + 1}${h < 12 ? "a" : "p"}`;
+}
+
+function StudyBar({ shot, minute, span, setMinute, playing, setPlaying, riseLabel, setLabel }: {
+  shot: { time: string; ampm: string; litPct: number | null }; minute: number; span: number; setMinute: (m: number) => void;
+  playing: boolean; setPlaying: (p: boolean) => void; riseLabel: string; setLabel: string;
+}) {
+  return (
+    <div className="study">
+      <button className="study-play" aria-label={playing ? "Pause" : "Play"} onClick={() => setPlaying(!playing)}>{playing ? "❚❚" : "▶"}</button>
+      <span className="study-time"><b>{shot.time}</b><small>{shot.ampm}</small></span>
+      <label className="study-slider">
+        <span className="sr-only">Time of day</span>
+        <input type="range" min={0} max={span} step={5} value={minute} onChange={(e) => setMinute(Number(e.target.value))} style={{ ["--p" as string]: `${(minute / span) * 100}%` }} />
+        <span className="study-ends"><span>{riseLabel} sunrise</span><span>sunset {setLabel}</span></span>
+      </label>
+      {shot.litPct != null && <span className="study-lit"><small>In sun now</small><b>{shot.litPct}%</b><small>of your outline</small></span>}
+    </div>
+  );
+}

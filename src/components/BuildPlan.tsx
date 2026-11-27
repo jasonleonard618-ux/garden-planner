@@ -3,7 +3,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type { Bed } from "@/lib/beds";
 import type { Plan } from "@/lib/layout";
-import { BED_TIERS, bedLines, dripLines, fenceLayout, fenceLines, FENCE_TIERS, total, type Line, type Tier } from "@/lib/build";
+import { MATS, PATHS, BED_TIERS, bedLinesFor, pathLines, soakerLines, type BedMat, type PathKind, type Water, dripLines, fenceLayout, fenceLines, FENCE_TIERS, total, type Line, type Tier } from "@/lib/build";
 import { measure } from "@/lib/geo";
 import { SRC } from "@/data/sources";
 import { SourceLink } from "./GrowTools";
@@ -16,7 +16,7 @@ type FenceTier = Tier | "none";
 const usd = (n: number) => n.toLocaleString(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 const ftIn = (ft: number) => { const f = Math.floor(ft + 1e-6); const i = Math.round((ft - f) * 12); return i === 12 ? `${f + 1}'-0"` : `${f}'-${i}"`; };
 
-export type BuildChoices = { bed: BedTier; fence: FenceTier; drip: boolean };
+export type BuildChoices = { bed: BedTier; fence: FenceTier; drip: boolean; mat?: BedMat; path?: PathKind; water?: Water };
 
 export function useBuild(garden: LngLat[] | null, beds: Bed[], c: BuildChoices) {
   return useMemo(() => {
@@ -26,10 +26,15 @@ export function useBuild(garden: LngLat[] | null, beds: Bed[], c: BuildChoices) 
     const fl = c.fence !== "none" ? fenceLayout(garden, sideFt, FENCE_TIERS[c.fence].maxBayFt) : null;
     const ys = garden.map((p) => p[1]);
     const lengthFt = ((Math.max(...ys) - Math.min(...ys)) * 110574) * 3.28084;
-    const groups: { title: string; lines: Line[] }[] = [{ title: `Beds (${beds.length}), ${BED_TIERS[c.bed].name}`, lines: bedLines(beds.length, c.bed) }];
+    const mat = c.mat ?? "cedar";
+    const groups: { title: string; lines: Line[] }[] = [{ title: `Beds (${beds.length}), ${MATS[mat].name.toLowerCase()}, ${BED_TIERS[c.bed].name}`, lines: bedLinesFor(beds.length, c.bed, mat) }];
+    const pathSq = m.areaSqFt - beds.length * 32;
+    const pl = pathLines(c.path ?? "chips", pathSq);
+    if (pl.length) groups.push({ title: `Paths, ${PATHS[c.path ?? "chips"].name.toLowerCase()}`, lines: pl });
     if (fl && c.fence !== "none") groups.push({ title: `Fence, ${FENCE_TIERS[c.fence].name}`, lines: fenceLines(fl, c.fence) });
     if (c.drip) groups.push({ title: "Drip watering", lines: dripLines(beds.length, Math.ceil(lengthFt + 25)) });
-    return { m, fl, groups, sum: groups.reduce((s, g) => s + total(g.lines), 0) };
+    else if (c.water === "soaker") groups.push({ title: "Soaker hoses", lines: soakerLines(beds.length) });
+    return { m, fl, groups, pathSq, sum: groups.reduce((s, g) => s + total(g.lines), 0) };
   }, [garden, beds, c]);
 }
 
@@ -171,7 +176,7 @@ function useLocal(garden: LngLat[]) {
   return (p: LngLat): [number, number] => [(p[0] - lon0) * kx, (p[1] - lat0) * ky];
 }
 
-function PlanSvg({ garden, beds, fl, kind, plan, ends }: { garden: LngLat[]; beds: Bed[]; fl: ReturnType<typeof fenceLayout> | null; kind: "site" | "fence" | "drip"; plan?: Plan; ends?: [string, string] }) {
+export function PlanSvg({ garden, beds, fl, kind, plan, ends }: { garden: LngLat[]; beds: Bed[]; fl: ReturnType<typeof fenceLayout> | null; kind: "site" | "fence" | "drip"; plan?: Plan; ends?: [string, string] }) {
   const toFt = useLocal(garden);
   const ring = garden.map(toFt);
   const xs = ring.map((p) => p[0]), ys = ring.map((p) => p[1]);
@@ -346,7 +351,7 @@ function CdSheet({ no, name, index }: { no: string; name: string; index: [string
     return raw.replace("%%PROJECT%%", escHtml(name)).replace("%%INDEX%%", rows).replace("%%DATE%%", new Date().toLocaleDateString("en-US"));
   }, [raw, name, index, no]);
   return (
-    <section className="sheet cd-sheet" aria-label={`Sheet ${no}`}>
+    <section className="sheet cd-sheet" id={`sheet-${no}`} aria-label={`Sheet ${no}`}>
       <div className="cd-fit" ref={box}>
         {html ? <div className="cd-inner" style={{ zoom: scale }} dangerouslySetInnerHTML={{ __html: html }} /> : <p className="muted small">Loading sheet {no}…</p>}
       </div>
@@ -360,7 +365,7 @@ export function BuildPlanSheets({ name, garden, beds, ends, plan, choices, onClo
   const fence = !!b.fl && choices.fence !== "none";
   const index: [string, string][] = [
     ["A-101", "Site and planting plan"],
-    [`B-10${BED_NO[choices.bed]}`, `Bed, ${BED_TIERS[choices.bed].name.toLowerCase()}`],
+    ...(MATS[choices.mat ?? "cedar"].drawn ? [[`B-10${BED_NO[choices.bed]}`, `Bed, ${BED_TIERS[choices.bed].name.toLowerCase()}`]] as [string, string][] : []),
     ...(fence ? [["F-100", "Fence layout"], [`F-10${FENCE_NO[choices.fence as Tier]}`, `Fence, ${FENCE_TIERS[choices.fence as Tier].name.toLowerCase()}`]] as [string, string][] : []),
     ...(fence && choices.fence === "excellent" ? [["F-501", "Gate details"]] as [string, string][] : []),
     ...(choices.drip ? [["D-101", "Drip plan"]] as [string, string][] : []),
@@ -375,7 +380,13 @@ export function BuildPlanSheets({ name, garden, beds, ends, plan, choices, onClo
           <button className="btn" onClick={onClose}>Close</button>
         </span>
       </div>
-      <section className="sheet">
+      <nav className="sheets-rail no-print" aria-label="Sheets">
+        <p className="eyebrow">{index.length} sheets</p>
+        {index.map(([no, title]) => (
+          <a key={no} href={`#sheet-${no}`} onClick={(e) => { e.preventDefault(); document.getElementById(`sheet-${no}`)?.scrollIntoView({ behavior: "smooth", block: "start" }); }}><b>{no}</b><span>{title}</span></a>
+        ))}
+      </nav>
+      <section className="sheet" id="sheet-A-101">
         <h2>Site and planting plan</h2>
         <div className="sheet-split planting">
           <PlanSvg garden={garden} beds={beds} fl={b.fl} kind="site" plan={plan} ends={ends} />
@@ -397,9 +408,9 @@ export function BuildPlanSheets({ name, garden, beds, ends, plan, choices, onClo
         <p className="sheet-note">{beds.length} beds, 4 × 8 ft, long sides {ends[0] === "north" ? "roughly north to south" : "roughly east to west"}, {trimmed ? "with a 1½ ft walking edge inside the dashed line, which is the fenced garden" : "kept 1½ ft in from the outline"}.{b.fl ? " Squares are fence posts." : ""} Plants are drawn at Extension spacing; crops planted closer than 6 in show as a fill, not one symbol per plant. Paler plants get less sun than they like.</p>
         <TitleBlock no="A-101" title="Site plan" name={name} />
       </section>
-      <CdSheet no={`B-10${BED_NO[choices.bed]}`} name={name} index={index} />
+      {MATS[choices.mat ?? "cedar"].drawn && <CdSheet no={`B-10${BED_NO[choices.bed]}`} name={name} index={index} />}
       {fence && (
-        <section className="sheet">
+        <section className="sheet" id="sheet-F-100">
           <h2>Fence layout, {FENCE_TIERS[choices.fence as Tier].name.toLowerCase()}</h2>
           <PlanSvg garden={garden} beds={beds} fl={b.fl} kind="fence" />
           <p className="sheet-note">{b.fl!.posts} posts. Each side is split into equal bays no wider than {FENCE_TIERS[choices.fence as Tier].maxBayFt} ft, measured center to center (O.C.). {FENCE_TIERS[choices.fence as Tier].summary} Source: <a href={SRC.ugaFence.href}>{SRC.ugaFence.label}</a>{FENCE_TIERS[choices.fence as Tier].src === "practical" ? " for heights; the cattle-panel build is a practical choice" : ""}.</p>
@@ -410,14 +421,14 @@ export function BuildPlanSheets({ name, garden, beds, ends, plan, choices, onClo
       {fence && <CdSheet no={`F-10${FENCE_NO[choices.fence as Tier]}`} name={name} index={index} />}
       {fence && choices.fence === "excellent" && <CdSheet no="F-501" name={name} index={index} />}
       {choices.drip && (
-        <section className="sheet">
+        <section className="sheet" id="sheet-D-101">
           <h2>Drip watering</h2>
           <PlanSvg garden={garden} beds={beds} fl={null} kind="drip" />
           <p className="sheet-note">A ½ in mainline (orange) runs down the middle path with a tee and riser to each bed and three lines of 12 in emitter tubing per bed (dotted). Assembly at the spigot, in order: backflow preventer, timer, 25 psi regulator, filter. Source: <a href={SRC.clemsonDrip.href}>{SRC.clemsonDrip.label}</a>. Start with about 30 minutes every other day and adjust to your soil and weather (practical starting point).</p>
           <TitleBlock no="D-101" title="Drip plan" name={name} />
         </section>
       )}
-      <section className="sheet flow">
+      <section className="sheet flow" id="sheet-C-101">
         <h2>Shopping list</h2>
         {b.groups.map((g) => (
           <table key={g.title} className="shop">
