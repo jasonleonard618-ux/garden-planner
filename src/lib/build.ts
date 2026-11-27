@@ -118,14 +118,18 @@ export function dripLines(beds: number, mainFt: number): Line[] {
 
 // ---------- options: bed material, paths, other watering (rough, practical-choice prices) ----------
 
-export type BedMat = "cedar" | "pine" | "steel" | "ground";
+export type BedMat = "cedar" | "pine" | "tank" | "ground";
+
+/** Reads a saved choice. Plans saved before stock tanks replaced the steel kit read "steel". */
+export const matOf = (m?: string): BedMat => (m === "steel" ? "tank" : m && m in MATS ? (m as BedMat) : "cedar");
 export type PathKind = "chips" | "gravel" | "cardboard" | "grass";
 export type Water = "drip" | "soaker" | "hand";
 
-export const MATS: Record<BedMat, { name: string; sub: string; life: string; drawn: boolean }> = {
+/** own: a bed style of its own, built the same way whatever level is picked for wood beds. */
+export const MATS: Record<BedMat, { name: string; sub: string; life: string; drawn: boolean; own?: boolean }> = {
   cedar: { name: "Cedar", sub: "Rot-resistant heartwood. Looks the best.", life: "10–15 yrs", drawn: true },
   pine: { name: "Pine", sub: "Cheapest wood. Untreated, so it rots sooner.", life: "3–5 yrs", drawn: true },
-  steel: { name: "Steel kit", sub: "Galvanized panels that bolt together.", life: "20+ yrs", drawn: false },
+  tank: { name: "Stock tank", sub: "Galvanized livestock troughs, 2 per bed. Drill, set on blocks, fill.", life: "2 ft deep, no carpentry", drawn: true, own: true },
   ground: { name: "In the ground", sub: "No frame. Dig, amend and mound the soil.", life: "More weeding", drawn: false },
 };
 export const PATHS: Record<PathKind, { name: string; sub: string; tag: string }> = {
@@ -140,13 +144,26 @@ export const WATERS: Record<Water, { name: string; sub: string; tag: string }> =
   hand: { name: "By hand", sub: "A hose or can, most days in July.", tag: "Daily chore" },
 };
 
-/** Material swaps for the cedar bed list. Pine uses the same sizes; steel and in-ground replace the frame. */
+/** One 4 x 8 ft bed space = two 2 x 8 x 2 ft round-end tanks side by side (sheet B-104). Prices: Behlen and
+ *  CountyLine listings, Nov 2026; the rest are rough practical-choice figures. */
+export const TANK = { perBed: 2, cuFt: 28, price: 292 };
+export function tankLines(n: number): Line[] {
+  const t = n * TANK.perBed;
+  return [
+    { item: "Galvanized stock tank, 2 × 8 × 2 ft, round end", qty: t, unit: "tanks", price: TANK.price, note: "New, not used or rusty. Two side by side fill one 4 × 8 ft bed space." },
+    { item: "Solid concrete block, 4 × 8 × 16 in", qty: 12 * t, unit: "blocks", price: 3, note: "Two rails of 6 under each tank, holes left open between them." },
+    { item: "Stone dust (paver base), 0.5 cu ft bag", qty: 6 * t, unit: "bags", price: 6, note: "2 in, leveled, under the blocks." },
+    { item: "Zinc-rich cold-galvanizing spray", qty: Math.ceil(t / 2), unit: "cans", price: 15, note: "Touch up the drilled hole edges." },
+    { item: "Raised-bed soil mix", qty: Math.ceil(((TANK.cuFt * t) / 27) * 10) / 10, unit: "cu yd", price: 60, note: `${TANK.cuFt * t} cu ft, one mix all the way down. No gravel layer.` },
+  ];
+}
+
+/** Material swaps for the cedar bed list. Pine uses the same sizes; stock tanks and in-ground replace the frame. */
 export function bedLinesFor(n: number, tier: keyof typeof BED_TIERS, mat: BedMat): Line[] {
   const base = bedLines(n, tier);
   if (mat === "cedar") return base;
   if (mat === "pine") return base.map((l) => l.item.startsWith("Cedar") ? { ...l, item: l.item.replace("Cedar", "Untreated pine"), price: Math.round(l.price * 0.45) } : l);
-  const soil = base.filter((l) => l.item.startsWith("Raised-bed soil") || l.item.startsWith("6 mil"));
-  if (mat === "steel") return [{ item: `Galvanized steel bed kit, 4 × 8 ft, ${BED_TIERS[tier].courses > 1 ? "17" : "11"} in tall`, qty: n, unit: "kits", price: BED_TIERS[tier].courses > 1 ? 150 : 110, note: "Follow the kit's own assembly sheet." }, ...soil.filter((l) => !l.item.startsWith("6 mil"))];
+  if (mat === "tank") return tankLines(n);
   return [{ item: "Compost to dig in, 3 in over each bed", qty: Math.ceil(((n * 32 * 0.25) / 27) * 10) / 10, unit: "cu yd", price: 45, note: "Mound beds about 6 in high; no frame." }];
 }
 

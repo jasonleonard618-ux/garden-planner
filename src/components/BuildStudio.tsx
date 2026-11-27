@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import type { Bed } from "@/lib/beds";
 import type { LngLat } from "@/lib/types";
 import {
-  BED_TIERS, FENCE_TIERS, MATS, PATHS, WATERS, bedLinesFor, dripLines, fenceLines, pathLines, soakerLines, total,
+  BED_TIERS, FENCE_TIERS, MATS, PATHS, WATERS, bedLinesFor, matOf, dripLines, fenceLines, pathLines, soakerLines, total,
   type BedMat, type Line, type PathKind, type Tier, type Water,
 } from "@/lib/build";
 import { SRC } from "@/data/sources";
@@ -68,6 +68,20 @@ const BED_INFO: Record<BedTier, { blurb: string; time: string; steps: string[] }
       "Set and level the bed, then fill to 2 in below the top and water in.",
     ],
   },
+};
+
+/** Stock tank planter, from sheet B-104 keynotes. */
+const TANK_INFO = {
+  blurb: "Two new 2 × 8 × 2 ft galvanized stock tanks fill each 4 × 8 ft bed space. No carpentry, 2 ft of root depth and a 28 in working height. They cost more than wood and take more soil, and a filled tank can't be moved.",
+  time: "2 hours per pair, plus filling",
+  steps: [
+    "Strip the sod, level the spot and lay 2 in of stone dust where the blocks go.",
+    "Set two rails of 4×8×16 solid blocks under each tank's long sides, leaving the middle strip open.",
+    "Drill seven 1/2 in holes along the floor's centerline, 12 in apart. Remove the factory drain plug and leave it out.",
+    "Deburr each hole and touch up the bare edges with cold-galvanizing spray. Wear gloves; drilled edges are sharp.",
+    "Set the tank on its blocks before filling. Fill with one soil mix all the way down to 2 in below the rim. Don't add a gravel layer, it holds water up instead of draining it.",
+    "Keep soil pH between 6 and 7, test it every few years, and skip blueberries. Zinc can leach more in acid soil.",
+  ],
 };
 
 const FENCE_INFO: Record<Tier, { blurb: string; time: string; steps: string[] }> = {
@@ -140,6 +154,7 @@ export function BuildStudio({ garden, beds, trimmed, choices, setChoices, onOpen
   const water: Water = choices.drip ? "drip" : choices.water === "soaker" ? "soaker" : "hand";
   const fenceOn = choices.fence !== "none";
   const ft = fenceOn ? (choices.fence as Tier) : null;
+  const mat = matOf(choices.mat);
   const view: FenceView = ft !== "excellent" && (fv === "footing" || fv === "gate") ? "cutaway" : fv;
 
   const stage = <Stage tab={tab} setTab={setTab} b={b} beds={beds} garden={garden} choices={choices} set={set} water={water} fenceView={view} setFenceView={setFv} />;
@@ -157,7 +172,7 @@ export function BuildStudio({ garden, beds, trimmed, choices, setChoices, onOpen
         <>
           <p className="small">Choose a bed material, a path surface and how you&apos;ll water. Prices update for your {beds.length} beds.</p>
           <dl className="build-sum">
-            <div><dt>Beds</dt><dd>{MATS[choices.mat ?? "cedar"].name}, {BED_TIERS[choices.bed].name.toLowerCase()}</dd></div>
+            <div><dt>Beds</dt><dd>{MATS[mat].name}{MATS[mat].own ? `, ${beds.length * 2} tanks` : `, ${BED_TIERS[choices.bed].name.toLowerCase()}`}</dd></div>
             <div><dt>Paths</dt><dd>{PATHS[choices.path ?? "chips"].name}</dd></div>
             <div><dt>Water</dt><dd>{WATERS[water].name}</dd></div>
             <div><dt>Fence</dt><dd>{ft ? FENCE_TIERS[ft].name : "None"}</dd></div>
@@ -168,17 +183,26 @@ export function BuildStudio({ garden, beds, trimmed, choices, setChoices, onOpen
 
       {tab === "beds" && (
         <>
+          {MATS[mat].own ? (
+            <>
+              <p className="small">{TANK_INFO.blurb} About {TANK_INFO.time}.</p>
+              <h3>Steps</h3>
+              <ol className="build-steps">{TANK_INFO.steps.map((t) => <li key={t}>{t}</li>)}</ol>
+              <p className="muted small">Galvanized beds are generally safe for food crops. How hot a tank gets and how many years it lasts aren&apos;t settled by any source. <a className="why" href={SRC.hgicGalv.href} target="_blank" rel="noreferrer">Why?</a> · <a className="why" href={SRC.tankDrain.href} target="_blank" rel="noreferrer">Drain holes</a> · <a className="why" href={SRC.uwContainers.href} target="_blank" rel="noreferrer">No gravel layer</a></p>
+            </>
+          ) : (
+          <>
           <div className="tiers" role="radiogroup" aria-label="Bed level">
             {(Object.keys(BED_TIERS) as BedTier[]).map((k) => (
               <button key={k} role="radio" aria-checked={choices.bed === k} className={choices.bed === k ? "tier on" : "tier"} onClick={() => set({ bed: k })}>
                 <b>{BED_TIERS[k].name}</b>
-                <small>{usd(total(bedLinesFor(1, k, choices.mat ?? "cedar")))} / bed</small>
+                <small>{usd(total(bedLinesFor(1, k, mat)))} / bed</small>
               </button>
             ))}
           </div>
           <p className="small">{BED_INFO[choices.bed].blurb} About {BED_INFO[choices.bed].time}.</p>
-          {!MATS[choices.mat ?? "cedar"].drawn && <p className="warn small">{MATS[choices.mat ?? "cedar"].name} beds aren&apos;t drawn; the drawing shows the cedar build. Follow the kit or mound the soil.</p>}
-          {MATS[choices.mat ?? "cedar"].drawn && (
+          {!MATS[mat].drawn && <p className="warn small">{MATS[mat].name} beds aren&apos;t drawn; the drawing shows the cedar build. Follow the kit or mound the soil.</p>}
+          {MATS[mat].drawn && (
             <>
               <h3>Steps</h3>
               <ol className="build-steps">{BED_INFO[choices.bed].steps.map((s) => <li key={s}>{s}</li>)}</ol>
@@ -207,6 +231,8 @@ export function BuildStudio({ garden, beds, trimmed, choices, setChoices, onOpen
             </ul>
             <p className="muted small">Sources: <a href={SRC.umdBeds.href} target="_blank" rel="noreferrer">{SRC.umdBeds.label}</a>; <a href={SRC.askBeds.href} target="_blank" rel="noreferrer">{SRC.askBeds.label}</a>.</p>
           </details>
+          </>
+          )}
         </>
       )}
 
@@ -300,14 +326,14 @@ function Stage({ tab, setTab, b, beds, garden, choices, set, water, fenceView, s
   set: (c: Partial<BuildChoices>) => void; water: Water; fenceView: FenceView; setFenceView: (v: FenceView) => void;
 }) {
   const n = beds.length;
-  const mat = choices.mat ?? "cedar";
+  const mat = matOf(choices.mat);
   const ft = choices.fence !== "none" ? (choices.fence as Tier) : null;
   if (tab === "options") {
     return (
       <div className="paper options-paper">
         <p className="eyebrow">Build · options</p>
         <h2 className="paper-h">Materials for your {n} beds</h2>
-        <h3>Bed material <small>{BED_TIERS[choices.bed].name.toLowerCase()} build</small></h3>
+        <h3>Bed material <small>{MATS[mat].own ? "stock tanks, 2 per bed" : `${BED_TIERS[choices.bed].name.toLowerCase()} build`}</small></h3>
         <div className="opt-grid">
           {(Object.keys(MATS) as BedMat[]).map((k) => (
             <OptCard key={k} kind={`mat-${k}`} on={mat === k} title={MATS[k].name} price={usd(total(bedLinesFor(n, choices.bed, k)))} sub={MATS[k].sub} tag={MATS[k].life} onClick={() => set({ mat: k })} />
@@ -336,8 +362,8 @@ function Stage({ tab, setTab, b, beds, garden, choices, set, water, fenceView, s
     const lines = bedLinesFor(1, choices.bed, mat);
     return (
       <div className="paper split">
-        <Drawing src={`/drawings/bed-${choices.bed}.svg`} />
-        <CutList title={`Per bed · ${MATS[mat].name.toLowerCase()} · ${BED_TIERS[choices.bed].name.toLowerCase()}`} lines={lines} foot={MATS[mat].drawn ? `Full sheet: B-10${{ good: 1, better: 2, best: 3 }[choices.bed]} in your build plan.${mat === "pine" ? " Pine uses the same sizes as the cedar drawn here." : ""}` : "Drawing shows the cedar build for reference."} />
+        <Drawing src={MATS[mat].own ? "/drawings/bed-tank.svg" : `/drawings/bed-${choices.bed}.svg`} />
+        <CutList title={MATS[mat].own ? "Per bed · 2 stock tanks" : `Per bed · ${MATS[mat].name.toLowerCase()} · ${BED_TIERS[choices.bed].name.toLowerCase()}`} lines={lines} foot={MATS[mat].own ? "Full sheet: B-104 in your build plan." : MATS[mat].drawn ? `Full sheet: B-10${{ good: 1, better: 2, best: 3 }[choices.bed]} in your build plan.${mat === "pine" ? " Pine uses the same sizes as the cedar drawn here." : ""}` : "Drawing shows the cedar build for reference."} />
       </div>
     );
   }
