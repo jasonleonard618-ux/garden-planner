@@ -128,7 +128,7 @@ function fitAt(localIn: [number, number][], o: BedOptions, angleDeg: number) {
 }
 
 /** Average direct-sun hours inside one bed, sampled from the shade grid (web mercator). */
-export function bedSun(bed: Bed, hours: Float32Array, g: { cols: number; rows: number; bounds: [number, number, number, number] }) {
+export function bedSun(bed: Pick<Bed, "ring" | "center">, hours: Float32Array, g: { cols: number; rows: number; bounds: [number, number, number, number] }) {
   const poly = bed.ring.map(toMerc);
   const step = (g.bounds[2] - g.bounds[0]) / g.cols;
   const bx = poly.map((p) => p[0]), by = poly.map((p) => p[1]);

@@ -6,7 +6,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fmt, measure, ringBbox, ringCenter, slopeAdvice, terrainStats, toMerc, uid } from "@/lib/geo";
 import { clockOffsetHours, dayWindow, gridCorners, lightAt, prepare, SEASON_DATES, sunColor } from "@/lib/shade";
 import { deleteSite, downloadSite, listSites, readSiteFile, saveSite } from "@/lib/storage";
-import type { LngLat, Place, Season, SiteData, SiteObject, SiteProfile, SunStats, SurfaceGrid, Terrain, TerrainStats } from "@/lib/types";
+import type { BedKind, LngLat, MyBed, Place, Road, Season, SiteData, SiteObject, SiteProfile, SunStats, SurfaceGrid, Terrain, TerrainStats } from "@/lib/types";
+import { LastYearStep, rectAt, RoadQuestion, YourBedsStep } from "./HaveSteps";
+import { familyOf, FAMILY_LABEL, ROTATION_YEARS } from "@/data/families";
 import type { DraftApi, DrawMode } from "./MapView";
 import WindRose from "./WindRose";
 import { Wordmark } from "./Logo";
@@ -29,7 +31,9 @@ type Grid = SurfaceGrid & { fromLidar: boolean };
 type Load<T> = { state: "idle" } | { state: "loading" } | { state: "error"; message: string } | { state: "done"; data: T };
 
 const TOOL_LABEL: Record<ToolView, string> = { timeline: "Seed to harvest", problems: "What's wrong?", checklist: "Season checklist" };
-const STEPS = ["Address", "Sun", "Goals", "Beds", "Plants", "Layout", "Build", "Grow", "Save"];
+const LABEL: Record<number, string> = { 0: "Address", 1: "Sun", 2: "Goals", 3: "Beds", 4: "Plants", 5: "Layout", 6: "Build", 7: "Grow", 8: "Save", 9: "Your beds", 10: "Last year" };
+// Two roads: starting fresh (all steps), or already have beds (skips sizing and building; adds Your beds and Last year).
+const ROADS: Record<Road, number[]> = { new: [0, 1, 2, 3, 4, 5, 6, 7, 8], have: [0, 9, 10, 4, 5, 7, 8] };
 const SEASONS: Season[] = ["spring", "summer", "fall"];
 const SEASON_SHORT: Record<Season, string> = { spring: "Spring", summer: "Summer", fall: "Late summer" };
 const YEAR = new Date().getFullYear() + (new Date().getMonth() > 8 ? 1 : 0);
@@ -107,6 +111,10 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
   const [saved, setSaved] = useState<SiteProfile[]>([]);
   const [toast, setToast] = useState<string | null>(null);
   const [step, setStep] = useState(0);
+  const [road, setRoad] = useState<Road | null>(null);
+  const [myBeds, setMyBeds] = useState<MyBed[]>([]);
+  const [bedKind, setBedKind] = useState<BedKind>("raised");
+  const [bedSize, setBedSize] = useState({ w: 4, l: 8 });
   const [bedOpts, setBedOpts] = useState<BedOptions>(DEFAULT_BEDS);
   const [picks, setPicks] = useState<string[]>([]);
   const [goals, setGoals] = useState<Goals>(DEFAULT_GOALS);
@@ -164,7 +172,9 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
 
   // ---------- drawing ----------
   const onRingComplete = (ring: LngLat[]) => {
-    if (mode === "garden") {
+    if (mode === "bed") {
+      setMyBeds((b) => [...b, { id: uid(), n: b.length + 1, ring, center: ringCenter(ring), kind: bedKind, history: {} }]);
+    } else if (mode === "garden") {
       setGarden(ring);
       setSunBySeason({});
     } else if (mode === "structure") {
@@ -178,6 +188,12 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
     if (mode === "pin") {
       setProfileId(uid());
       choosePlace({ label: `Dropped pin, ${p[1].toFixed(5)}, ${p[0].toFixed(5)}`, lat: p[1], lon: p[0] });
+      return;
+    }
+    if (mode === "bedpoint") {
+      const ring = rectAt(p, bedSize.w, bedSize.l);
+      setMyBeds((b) => [...b, { id: uid(), n: b.length + 1, ring, center: p, kind: bedKind, history: {} }]);
+      setMode("idle");
       return;
     }
     if (mode !== "tree") return;
@@ -358,7 +374,43 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
   const bestSun = bedSuns?.length ? Math.max(...bedSuns.map((h) => h ?? 0)) : sunStats?.avgHours ?? null;
   const frost = site.state === "done" ? site.data.frost ?? null : null;
   const siteState = site.state === "done" ? site.data.state ?? null : null;
-  const plan = useMemo(() => planBeds(bedRows, picks), [bedRows, picks]);
+  // ---------- returning gardener road: the beds they already have ----------
+  const have = road === "have";
+  const mySuns = useMemo(() => {
+    if (!have || !sun || grid.state !== "done" || sun.key !== sunKey) return null;
+    return myBeds.map((b) => bedSun(b, sun.hours, grid.data));
+  }, [have, myBeds, sun, grid, sunKey]);
+  // Perennial patches stay as they are, so only the other beds are planned.
+  const annual = useMemo(() => myBeds.map((b, i) => ({ b, h: mySuns?.[i] ?? null })).filter((x) => x.b.kind !== "perennial"), [myBeds, mySuns]);
+  const haveRows = useMemo(() => annual.map((x) => ({ n: x.b.n, sun: x.h })), [annual]);
+  // Families grown in each bed over the last few years.
+  const recent = useMemo(() => {
+    const out = new Map<number, Map<string, number>>(); // bed n -> family -> latest year
+    for (const b of myBeds) {
+      const m = new Map<string, number>();
+      for (const [y, crops] of Object.entries(b.history)) {
+        const yr = +y;
+        if (yr >= YEAR || yr < YEAR - ROTATION_YEARS) continue;
+        for (const id of crops) { const f = familyOf(id); if (f && (m.get(f) ?? 0) < yr) m.set(f, yr); }
+      }
+      out.set(b.n, m);
+    }
+    return out;
+  }, [myBeds]);
+  const plan = useMemo(() => have
+    ? planBeds(haveRows, picks, { avoid: (n, c) => { const f = familyOf(c.id); return !c.perennial && !!f && !!recent.get(n)?.has(f); } })
+    : planBeds(bedRows, picks), [have, haveRows, bedRows, picks, recent]);
+  const plantSuns = have ? annual.map((x) => x.h) : bedSuns;
+  const plantBest = have ? (plantSuns?.length ? Math.max(...plantSuns.map((h) => h ?? 0)) : null) : bestSun;
+  const lastYearByBed = useMemo(() => {
+    if (!have) return null;
+    const m = new Map<number, string>();
+    for (const b of myBeds) {
+      const fams = [...(recent.get(b.n)?.entries() ?? [])].sort((a, z) => z[1] - a[1]).map(([f, y]) => `${FAMILY_LABEL[f as keyof typeof FAMILY_LABEL]} ${y}`);
+      if (fams.length) m.set(b.n, fams.join(", "));
+    }
+    return m;
+  }, [have, myBeds, recent]);
   // Frame the garden in the map area beside the panel when moving past step 1.
   const framed = useRef<string>("");
   useEffect(() => {
@@ -379,6 +431,15 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
   }, [garden, step, mapSpots]);
 
   const mapBeds = useMemo(() => {
+    if (have) {
+      if (![9, 10, 4, 5].includes(step)) return [];
+      return myBeds.map((b, i) => {
+        const h = mySuns?.[i];
+        const sq = plan.beds.find((x) => x.n === b.n);
+        const low = h != null && (step === 5 && sq ? sq.north.lowSun || sq.south.lowSun : b.kind !== "perennial" && h < 6);
+        return { n: b.n, ring: b.ring, center: b.center, label: `${b.n}`, tone: (b.kind === "perennial" ? "walk" : low ? "low" : "ok") as "ok" | "low" | "walk" };
+      });
+    }
     if (!fit || step < 2 || step > 6) return [];
     return fit.beds.map((b, i) => {
       const h = bedSuns?.[i];
@@ -386,7 +447,7 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
       const low = h != null && (step >= 5 && sq ? sq.north.lowSun || sq.south.lowSun : h < 6);
       return { n: b.n, ring: b.ring, center: b.center, label: `${b.n}`, tone: (low ? "low" : "ok") as "ok" | "low" };
     });
-  }, [fit, bedSuns, plan, step]);
+  }, [have, myBeds, mySuns, fit, bedSuns, plan, step]);
 
   // ---------- saving ----------
   const buildProfile = (): SiteProfile | null =>
@@ -396,6 +457,13 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
       savedAt: new Date().toISOString(),
       place, garden, objects, imagery,
       beds: bedOpts, picks, build, goals,
+      road: road ?? undefined,
+      // Record this year's plan in each bed's history, so next year's rotation fills in by itself.
+      myBeds: have ? myBeds.map((b) => {
+        const sq = plan.beds.find((x) => x.n === b.n);
+        const crops = sq ? [...new Set([sq.north.crop?.id, sq.south.crop?.id].filter(Boolean) as string[])] : [];
+        return crops.length ? { ...b, history: { ...b.history, [String(YEAR)]: crops } } : b;
+      }) : myBeds.length ? myBeds : undefined,
       summary: {
         areaSqFt: measured?.areaSqFt,
         perimeterFt: measured?.perimeterFt,
@@ -432,7 +500,10 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
     setGoals({ ...DEFAULT_GOALS, ...(p.goals ?? {}) });
     if (p.build) setBuild(p.build as BuildChoices);
     choosePlace(p.place, { garden: p.garden, objects: p.objects ?? [] });
-    setStep(p.garden ? 1 : 0);
+    const r: Road | null = p.road ?? (p.garden ? "new" : null);
+    setRoad(r);
+    setMyBeds(p.myBeds ?? []);
+    setStep(r === "have" ? 9 : p.garden ? 1 : 0);
   };
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -442,13 +513,28 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
     if (typeof window === "undefined" || !window.matchMedia("(max-width: 760px)").matches) return;
     setCollapsed(drawing || editing);
   }, [drawing, editing]);
-  const rectMode = mode === "garden" && shape === "rect";
+  const rectMode = (mode === "garden" || mode === "bed") && shape === "rect";
   const s = site.state === "done" ? site.data : null;
   const mainSoil = s?.soil?.components.find((c) => c.texture) ?? s?.soil?.components[0];
 
-  const reached = [true, !!garden, !!garden, !!garden, !!garden, !!garden, !!garden, true, !!place];
-  const go = (i: number) => { if (reached[i]) { setView(null); setStep(i); setMode("idle"); setEditing(false); panelRef.current?.scrollTo({ top: 0 }); } };
-  const nextOk = step < STEPS.length - 1 && reached[step + 1];
+  const steps = ROADS[road ?? "new"];
+  const pos = Math.max(0, steps.indexOf(step));
+  const hasBeds = myBeds.length > 0;
+  const reachedNew = [true, !!garden, !!garden, !!garden, !!garden, !!garden, !!garden, true, !!place];
+  const reachedOf = (i: number) => have ? ({ 0: true, 9: !!place, 10: hasBeds, 4: hasBeds, 5: hasBeds, 7: true, 8: !!place } as Record<number, boolean>)[i] ?? false : reachedNew[i] ?? false;
+  const show = (i: number) => { setView(null); setStep(i); setMode("idle"); setEditing(false); panelRef.current?.scrollTo({ top: 0 }); };
+  const go = (i: number) => { if (reachedOf(i)) show(i); };
+  const nextStep = steps[pos + 1];
+  const nextOk = nextStep != null && reachedOf(nextStep);
+  // Zoom in close enough to trace a 4 ft bed when the returning gardener starts tracing.
+  const toBeds = () => {
+    show(9);
+    if (place && !myBeds.length) {
+      const phone = window.innerWidth <= 760;
+      setFlyTo({ center: [place.lon, place.lat], zoom: 20.5, key: Date.now(), padLeft: phone ? 0 : 440, padBottom: phone ? Math.round(window.innerHeight * 0.56) : 0 });
+    }
+  };
+  const pickRoad = (r: Road) => { setRoad(r); track("road_picked", r); if (r === "have") toBeds(); };
 
   return (
     <div className="app">
@@ -458,23 +544,23 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
         </Link>
         <nav className="stepbar" aria-label="Steps">
           <ol>
-            {STEPS.map((label, i) => (
-              <li key={label}>
+            {steps.map((i, k) => (
+              <li key={LABEL[i]}>
                 <button
-                  className={`step${i === step ? " on" : ""}${i < step && reached[i] ? " done" : ""}`}
+                  className={`step${i === step ? " on" : ""}${k < pos && reachedOf(i) ? " done" : ""}`}
                   onClick={() => go(i)}
-                  disabled={!reached[i]}
+                  disabled={!reachedOf(i)}
                   aria-current={i === step ? "step" : undefined}
                 >
-                  <span className="step-n">{i < step && reached[i] ? "✓" : i + 1}</span>
-                  <span className="step-l">{label}</span>
+                  <span className="step-n">{k < pos && reachedOf(i) ? "✓" : k + 1}</span>
+                  <span className="step-l">{LABEL[i]}</span>
                 </button>
               </li>
             ))}
           </ol>
         </nav>
-        <span className="step-mobile">{view ? TOOL_LABEL[view] : `Step ${step + 1} of ${STEPS.length} · ${STEPS[step]}`}</span>
-        <Feedback step={view ?? STEPS[step]} />
+        <span className="step-mobile">{view ? TOOL_LABEL[view] : `Step ${pos + 1} of ${steps.length} · ${LABEL[step]}`}</span>
+        <Feedback step={view ?? LABEL[step]} />
       </header>
 
       <main className="mapwrap">
@@ -517,12 +603,12 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
         )}
         {drawing && (
           <div className="map-ui top-center hint">
-            {mode === "pin" ? "Tap your yard" : mode === "tree" ? "Tap the centre of the tree"
-              : rectMode ? ["Tap one corner of the garden", "Tap the next corner along the same side", "Tap the opposite side to set the depth"][Math.min(draftCount, 2)]
+            {mode === "pin" ? "Tap your yard" : mode === "tree" ? "Tap the centre of the tree" : mode === "bedpoint" ? "Tap the middle of the bed"
+              : rectMode ? [mode === "bed" ? "Tap one corner of the bed" : "Tap one corner of the garden", "Tap the next corner along the same side", "Tap the opposite side to set the depth"][Math.min(draftCount, 2)]
               : draftCount < 3 ? "Tap each corner" : "Tap the first point or press Finish to close the shape"}
           </div>
         )}
-        {(mode === "garden" || mode === "structure" || mode === "clear") && (
+        {(mode === "garden" || mode === "bed" || mode === "structure" || mode === "clear") && (
           <div className="map-ui draw-bar glass" role="toolbar" aria-label="Drawing tools">
             <button className="btn" disabled={draftCount < 1} onClick={() => draftRef.current?.undo()}>↶ Undo</button>
             <button className="btn" disabled={draftCount < 1} onClick={() => draftRef.current?.clear()}>Erase</button>
@@ -550,26 +636,39 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
             {view === "problems" && <Problems />}
             {view === "checklist" && <Checklist frost={frost} />}
             <div className="stepnav">
-              <button className="btn ghost" onClick={() => setView(null)}>← Back to step {step + 1}: {STEPS[step]}</button>
+              <button className="btn ghost" onClick={() => setView(null)}>← Back to step {pos + 1}: {LABEL[step]}</button>
               <span />
             </div>
           </>
         ) : (<>
-        <p className="eyebrow">Step {step + 1} · {STEPS[step]}</p>
+        <p className="eyebrow">Step {pos + 1} · {LABEL[step]}</p>
 
         {step === 0 && (
           <>
-            <h1 className="title">{place ? "Outline your garden" : "Find your yard"}</h1>
+            <h1 className="title">{!place ? "Find your yard" : road === "new" ? "Outline your garden" : have ? "Your yard is found" : "Found it"}</h1>
             <p className="lede">
               {place
-                ? "Trace the area you want to plant. Tap each corner on the map."
+                ? road === "new" ? "Trace the area you want to plant. Tap each corner on the map." : have ? "Next you'll trace the beds you already grow in." : "We're pulling up the sun and soil for this spot while you answer."
                 : "Type your address. We'll pull up a photo of your yard from above and measure the sun it gets."}
             </p>
-            <AddressSearch initial={initialQuery} onPick={(p) => { setProfileId(uid()); choosePlace(p); }} onDropPin={() => setMode("pin")} />
+            <AddressSearch initial={initialQuery} onPick={(p) => { setProfileId(uid()); setRoad(null); setMyBeds([]); choosePlace(p); }} onDropPin={() => setMode("pin")} />
             {mode === "pin" && <div className="draw-help"><p>Tap your yard on the map. Zoom in first if you need to.</p><button className="btn ghost" onClick={() => setMode("idle")}>Cancel</button></div>}
             {place && <p className="muted small place">{place.label}</p>}
-            {place && !garden && mode !== "garden" && (
-              <button className="btn primary" onClick={() => setMode("garden")}>Draw garden outline</button>
+            {place && !garden && !road && mode !== "pin" && <RoadQuestion onPick={pickRoad} />}
+            {place && have && (
+              <div className="road-note">
+                <p className="small">You already grow here, so we&apos;ll skip sizing and building. Next, trace the beds you have.</p>
+                <div className="row">
+                  <button className="btn primary" onClick={toBeds}>Trace my beds</button>
+                  <button className="link" onClick={() => setRoad("new")}>Switch to starting fresh</button>
+                </div>
+              </div>
+            )}
+            {place && !garden && road === "new" && mode !== "garden" && (
+              <>
+                <button className="btn primary" onClick={() => setMode("garden")}>Draw garden outline</button>
+                <p className="muted small">Already have beds? <button className="link" onClick={() => pickRoad("have")}>Plan the beds you have</button></p>
+              </>
             )}
             {mode === "garden" && <ShapePicker shape={shape} setShape={(v) => { setShape(v); draftRef.current?.clear(); }} square={square} setSquare={setSquare} />}
             {garden && measured && mode !== "garden" && (
@@ -798,15 +897,26 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
             season={SEASON_SHORT[season]} sunBusy={sunBusy || grid.state === "loading"}
           />
         )}
-        {step === 4 && (
-          <PlantsStep onTimeline={() => { setGrowTab("timeline"); go(7); }} picks={picks} setPicks={setPicks} bestSun={bestSun} frost={frost} kind={kindFilter} setKind={setKindFilter} bedSuns={bedSuns} state={siteState} />
+        {step === 9 && (
+          <YourBedsStep
+            beds={myBeds} setBeds={setMyBeds} suns={mySuns} sunBusy={sunBusy || grid.state === "loading"} season={SEASON_SHORT[season]}
+            kind={bedKind} setKind={setBedKind} size={bedSize} setSize={setBedSize}
+            drawing={mode === "bed" || mode === "bedpoint" ? mode : null}
+            onDraw={() => { setShape("rect"); setMode("bed"); }} onPlace={() => setMode("bedpoint")} onCancel={() => setMode("idle")}
+            onSwitch={() => { setRoad("new"); show(0); }} gridMissing={grid.state === "done" && !grid.data.fromLidar}
+          />
         )}
-        {step === 5 && <LayoutStep plan={plan} picks={picks} onPick={() => go(4)} ends={fit?.ends ?? ["north", "south"]} />}
+        {step === 10 && <LastYearStep beds={myBeds} setBeds={setMyBeds} year={YEAR} />}
+        {step === 4 && (
+          <PlantsStep onTimeline={() => { setGrowTab("timeline"); go(7); }} picks={picks} setPicks={setPicks} bestSun={plantBest} frost={frost} kind={kindFilter} setKind={setKindFilter} bedSuns={plantSuns} state={siteState} />
+        )}
+        {step === 5 && <LayoutStep plan={plan} picks={picks} onPick={() => go(4)} ends={have ? ["north", "south"] : fit?.ends ?? ["north", "south"]} lastYear={lastYearByBed} perennials={have ? myBeds.filter((b) => b.kind === "perennial").map((b) => b.n) : []} />}
         {step === 6 && area && fit && <BuildStudio garden={area} trimmed={area !== garden} beds={fit.beds} choices={build} setChoices={setBuild} onOpen={() => setSheets(true)} />}
 
         {step === 7 && (
           <>
-            <p className="lede">Your plan doesn&apos;t stop at the build. These tools follow your crops and frost dates through the season.</p>
+            <p className="lede">{have ? "These tools follow your crops and frost dates through the season." : "Your plan doesn't stop at the build. These tools follow your crops and frost dates through the season."}</p>
+            {have && <div className="notice"><p><b>Season planner, free for your first year.</b> Save your plan and next year we&apos;ll suggest a new rotated layout from what you grew this year.</p></div>}
             <div className="tabs grow-tabs" role="tablist" aria-label="Grow tools">
               {(Object.keys(TOOL_LABEL) as ToolView[]).map((k) => (
                 <button key={k} role="tab" aria-selected={growTab === k} className={growTab === k ? "tab on" : "tab"} onClick={() => setGrowTab(k)}>{TOOL_LABEL[k]}</button>
@@ -863,10 +973,10 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
         }} />
 
         <div className="stepnav">
-          {step > 0 ? <button className="btn ghost" onClick={() => go(step - 1)}>Back</button> : <span />}
-          {step < STEPS.length - 1 && (
-            <button className="btn primary pill" onClick={() => go(step + 1)} disabled={!nextOk}>
-              Next: {STEPS[step + 1]} →
+          {pos > 0 ? <button className="btn ghost" onClick={() => go(steps[pos - 1])}>Back</button> : <span />}
+          {nextStep != null && (step !== 0 || road) && (
+            <button className="btn primary pill" onClick={() => go(nextStep)} disabled={!nextOk}>
+              {step === 10 && !myBeds.some((b) => Object.keys(b.history).length) ? "Skip" : "Next"}: {LABEL[nextStep]} →
             </button>
           )}
         </div>
@@ -1173,7 +1283,7 @@ function CropFacts({ c, bedsOk, beds, frost, guide }: { c: Crop; bedsOk: number 
 
 // ---------- step 5: layout ----------
 
-function LayoutStep({ plan, picks, onPick, ends }: { plan: ReturnType<typeof planBeds>; picks: string[]; onPick: () => void; ends: BedFit["ends"] }) {
+function LayoutStep({ plan, picks, onPick, ends, lastYear = null, perennials = [] }: { plan: ReturnType<typeof planBeds>; picks: string[]; onPick: () => void; ends: BedFit["ends"]; lastYear?: Map<number, string> | null; perennials?: number[] }) {
   const [e1, e2] = ends;
   const cap = (w: string) => w[0].toUpperCase() + w.slice(1);
   if (!picks.length) {
@@ -1190,13 +1300,16 @@ function LayoutStep({ plan, picks, onPick, ends }: { plan: ReturnType<typeof pla
   return (
     <>
       <h1 className="title">Lay out each bed</h1>
-      <p className="lede">{e1 === "north"
+      <p className="lede">{lastYear
+        ? <>Each bed is split into two halves, one crop per half. Tall crops go on the north half so they don&apos;t shade the rest.</>
+        : e1 === "north"
         ? <>Each bed is split into a north and a south 4 × 4 ft square. Tall crops sit on the north end so they don&apos;t shade the rest.</>
         : <>Each bed is split into a west and an east 4 × 4 ft square. With east–west beds, put trellised crops along the north side of the garden where you can.</>}</p>
       <div className="bedgrid">
         {plan.beds.map((b) => (
           <figure key={b.n} className="bedcard">
             <figcaption><b>Bed {b.n}</b><span>{b.sun == null ? "" : `${fmt(b.sun, 1)} hrs sun`}</span></figcaption>
+            {lastYear && <span className="bed-was">{lastYear.get(b.n) ? `Grew: ${lastYear.get(b.n)}` : "No history yet"}</span>}
             <BedSvg north={b.north} south={b.south} ends={ends} />
             <dl className="bedkey">
               {([[cap(e1)[0], b.north], [cap(e2)[0], b.south]] as const).map(([k, sq]) => (
@@ -1210,6 +1323,16 @@ function LayoutStep({ plan, picks, onPick, ends }: { plan: ReturnType<typeof pla
         ))}
       </div>
       <p className="muted small">{cap(e1)} end is at the top of each drawing. Dots show plant positions at Extension spacing.</p>
+      {lastYear && (
+        <p className="small">Each crop goes to a bed its plant family hasn&apos;t grown in for {ROTATION_YEARS} years, where there&apos;s one with enough sun. <a className="why" href={SOURCES.isuRotation.href} target="_blank" rel="noreferrer">Why?</a></p>
+      )}
+      {(() => {
+        const rep = plan.beds.flatMap((b) => [b.north, b.south]).filter((sq) => sq.crop && sq.repeat);
+        const seen = new Set<string>();
+        const list = rep.filter((sq) => { const k = `${sq.crop!.id}-${sq.bed}`; if (seen.has(k)) return false; seen.add(k); return true; });
+        return list.length > 0 && <p className="warn">{list.map((sq) => `${sq.crop!.name} in bed ${sq.bed}`).join(", ")}: every bed with room already grew this plant family recently, so {list.length > 1 ? "these repeat" : "it repeats"}. Pick fewer crops from that family, or accept a smaller harvest risk from soil pests.</p>;
+      })()}
+      {perennials.length > 0 && <p className="muted small">Bed{perennials.length > 1 ? "s" : ""} {perennials.join(", ")} {perennials.length > 1 ? "are perennial patches and stay" : "is a perennial patch and stays"} as {perennials.length > 1 ? "they are" : "it is"}.</p>}
       {plan.pairs.map((p) => (
         <p key={p.a} className="pair small"><b>Backed by trials:</b> {p.claim} <a className="why" href={p.source.href} target="_blank" rel="noreferrer">Why?</a></p>
       ))}
