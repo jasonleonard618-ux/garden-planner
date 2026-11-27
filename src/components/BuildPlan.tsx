@@ -3,7 +3,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type { Bed } from "@/lib/beds";
 import type { Plan } from "@/lib/layout";
-import { MATS, matOf, PATHS, BED_TIERS, bedLinesFor, pathLines, soakerLines, type BedMat, type PathKind, type Water, dripLines, fenceLayout, fenceLines, FENCE_TIERS, total, type Line, type Tier } from "@/lib/build";
+import { hiveStandLines, MATS, matOf, PATHS, BED_TIERS, bedLinesFor, pathLines, soakerLines, type BedMat, type PathKind, type Water, dripLines, fenceLayout, fenceLines, FENCE_TIERS, total, type Line, type Tier } from "@/lib/build";
 import { measure } from "@/lib/geo";
 import { SRC } from "@/data/sources";
 import { SourceLink } from "./GrowTools";
@@ -16,7 +16,7 @@ type FenceTier = Tier | "none";
 const usd = (n: number) => n.toLocaleString(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 const ftIn = (ft: number) => { const f = Math.floor(ft + 1e-6); const i = Math.round((ft - f) * 12); return i === 12 ? `${f + 1}'-0"` : `${f}'-${i}"`; };
 
-export type BuildChoices = { bed: BedTier; fence: FenceTier; drip: boolean; mat?: BedMat; path?: PathKind; water?: Water };
+export type BuildChoices = { bed: BedTier; fence: FenceTier; drip: boolean; mat?: BedMat; path?: PathKind; water?: Water; hives?: 0 | 1 | 2 };
 
 export function useBuild(garden: LngLat[] | null, beds: Bed[], c: BuildChoices) {
   return useMemo(() => {
@@ -34,6 +34,7 @@ export function useBuild(garden: LngLat[] | null, beds: Bed[], c: BuildChoices) 
     if (fl && c.fence !== "none") groups.push({ title: `Fence, ${FENCE_TIERS[c.fence].name}`, lines: fenceLines(fl, c.fence) });
     if (c.drip) groups.push({ title: "Drip watering", lines: dripLines(beds.length, Math.ceil(lengthFt + 25), !!MATS[mat].own) });
     else if (c.water === "soaker") groups.push({ title: "Soaker hoses", lines: soakerLines(beds.length) });
+    if (c.hives) groups.push({ title: `Hive stand for ${c.hives === 1 ? "one hive" : "two hives"}`, lines: hiveStandLines() });
     return { m, fl, groups, pathSq, sum: groups.reduce((s, g) => s + total(g.lines), 0) };
   }, [garden, beds, c]);
 }
@@ -360,7 +361,7 @@ const FENCE_NO: Record<Tier, number> = { good: 1, better: 2, best: 3, excellent:
 const escHtml = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 /** One construction sheet (1800 × 1200, drawn by the planning-set generator), filled in for this garden and scaled to fit. */
-function CdSheet({ no, name, index }: { no: string; name: string; index: [string, string][] }) {
+export function CdSheet({ no, name, index }: { no: string; name: string; index: [string, string][] }) {
   const [raw, setRaw] = useState("");
   const [scale, setScale] = useState(0.5);
   const box = useRef<HTMLDivElement>(null);
@@ -401,6 +402,7 @@ export function BuildPlanSheets({ name, garden, beds, ends, plan, choices, onClo
     ...(fence ? [["F-100", "Fence layout"], [`F-10${FENCE_NO[choices.fence as Tier]}`, `Fence, ${FENCE_TIERS[choices.fence as Tier].name.toLowerCase()}`]] as [string, string][] : []),
     ...(fence && choices.fence === "excellent" ? [["F-501", "Gate details"]] as [string, string][] : []),
     ...(choices.drip ? [["D-101", "Drip plan"]] as [string, string][] : []),
+    ...(choices.hives ? [["H-101", "Hive stand, apiary"]] as [string, string][] : []),
     ["C-101", "Shopping list"],
   ];
   return (
@@ -460,6 +462,7 @@ export function BuildPlanSheets({ name, garden, beds, ends, plan, choices, onClo
           <TitleBlock no="D-101" title="Drip plan" name={name} />
         </section>
       )}
+      {!!choices.hives && <CdSheet no="H-101" name={name} index={index} />}
       <section className="sheet flow" id="sheet-C-101">
         <h2>Shopping list</h2>
         {b.groups.map((g) => (

@@ -213,3 +213,48 @@ export function dayWindow(season: Season, year: number, lat: number, lon: number
   const t = SunCalc.getTimes(noon, lat, lon);
   return { rise: t.sunrise, set: t.sunset };
 }
+
+/** Light at one cell at one instant (same ray march as lightAt, for a single cell). */
+function lightAtCell(p: Prepared, r: number, c: number, when: Date, lat: number, lon: number, leafOff: boolean): number {
+  const pos = SunCalc.getPosition(when, lat, lon);
+  if (pos.altitude < 0.035) return 0;
+  const { cols, rows, cell, surface, ground, kind, maxZ } = p;
+  const bearing = pos.azimuth + Math.PI;
+  const dc = Math.sin(bearing), dr = -Math.cos(bearing);
+  const rise = Math.tan(pos.altitude) * cell;
+  const z0 = ground[r * cols + c] + OBSERVER_M;
+  let light = 1;
+  for (let s = 1; ; s++) {
+    const need = z0 + s * rise;
+    if (need > maxZ) break;
+    const cc = Math.round(c + dc * s), rr = Math.round(r + dr * s);
+    if (cc < 0 || rr < 0 || cc >= cols || rr >= rows) break;
+    const j = rr * cols + cc;
+    if (surface[j] > need) {
+      if (leafOff && kind[j] === 2) { light *= 0.8; if (light < 0.1) return 0; }
+      else return 0;
+    }
+  }
+  return light;
+}
+
+/**
+ * Direct sun at one point on one study day, split into before and after solar noon (hours).
+ * Sampled every 10 minutes. Returns null when the point is off the grid.
+ */
+export function pointSunSplit(p: Prepared, bounds: [number, number, number, number], at: LngLat, season: Season, year: number): { am: number; pm: number } | null {
+  const [x, y] = toMerc(at);
+  const step = (bounds[2] - bounds[0]) / p.cols;
+  const c = Math.floor((x - bounds[0]) / step), r = Math.floor((bounds[3] - y) / step);
+  if (c < 0 || r < 0 || c >= p.cols || r >= p.rows) return null;
+  const { rise, set } = dayWindow(season, year, at[1], at[0]);
+  if (!rise || !set) return null;
+  const t0 = rise.getTime(), t1 = set.getTime(), noon = (t0 + t1) / 2, dt = 10 * 60000;
+  const leafOff = SEASON_DATES[season].leafOff;
+  let am = 0, pm = 0;
+  for (let t = t0 + dt / 2; t < t1; t += dt) {
+    const l = lightAtCell(p, r, c, new Date(t), at[1], at[0], leafOff) * (dt / 3600000);
+    if (t < noon) am += l; else pm += l;
+  }
+  return { am, pm };
+}

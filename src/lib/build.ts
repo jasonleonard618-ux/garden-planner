@@ -190,3 +190,17 @@ export function soakerLines(beds: number): Line[] {
 }
 
 export const total = (lines: Line[]) => lines.reduce((s, l) => s + l.qty * l.price, 0);
+
+// ---------- hive stand (sheet H-101; one stand carries one or two hives) ----------
+
+export function hiveStandLines(): Line[] {
+  return [
+    { item: "4×4 ground-contact treated or cedar, 8 ft", qty: 1, unit: "", price: 14, note: "4 legs" },
+    { item: "2×6 ground-contact treated or cedar, 12 ft", qty: 1, unit: "", price: 16, note: "2 rails" },
+    { item: "2×6, 6 ft", qty: 1, unit: "", price: 8, note: "3 blocks" },
+    { item: "½ × 6 in carriage bolt, nut, washer, hot-dip galvanized", qty: 8, unit: "", price: 2.5 },
+    { item: "3 in exterior screws, coated", qty: 1, unit: "box", price: 10 },
+    { item: "12 × 12 × 2 in concrete paver", qty: 4, unit: "", price: 3 },
+    { item: "Paver base gravel, 0.5 cu ft bag", qty: 3, unit: "bags", price: 6 },
+  ];
+}
