@@ -90,10 +90,11 @@ export type SiteProfile = {
   imagery: "usgs" | "esri";
   beds?: { widthFt: number; lengthFt: number; pathFt: number; walkways: number[] };
   picks?: string[];
-  build?: { bed: string; fence: string; drip: boolean };
+  build?: { bed: string; fence: string; drip: boolean; hives?: 0 | 1 | 2 };
   goals?: { people: number; use: "fresh" | "preserve"; beds: number | null; fill: boolean };
   road?: Road;
   myBeds?: MyBed[];
+  bees?: { hives: 0 | 1 | 2; plants: string[]; hive: LngLat | null; facing: string | null; lotFt: number | null; waterFt: number | null; checks: Record<string, boolean> };
   summary: {
     areaSqFt?: number;
     perimeterFt?: number;

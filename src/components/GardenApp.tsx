@@ -4,7 +4,7 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fmt, measure, ringBbox, ringCenter, slopeAdvice, terrainStats, toMerc, uid } from "@/lib/geo";
-import { clockOffsetHours, dayWindow, gridCorners, lightAt, prepare, SEASON_DATES, sunColor } from "@/lib/shade";
+import { clockOffsetHours, dayWindow, gridCorners, lightAt, pointSunSplit, prepare, SEASON_DATES, sunColor } from "@/lib/shade";
 import { deleteSite, downloadSite, listSites, readSiteFile, saveSite } from "@/lib/storage";
 import type { BedKind, LngLat, MyBed, Place, Road, Season, SiteData, SiteObject, SiteProfile, SunStats, SurfaceGrid, Terrain, TerrainStats } from "@/lib/types";
 import { LastYearStep, rectAt, RoadQuestion, YourBedsStep } from "./HaveSteps";
@@ -14,7 +14,8 @@ import WindRose from "./WindRose";
 import { Wordmark } from "./Logo";
 import { Checklist, LocalNotes, Problems, Timeline, type ToolView } from "./GrowTools";
 import { guideFor, type RegionGuide } from "@/data/regions";
-import { BuildPlanSheets, type BuildChoices } from "./BuildPlan";
+import { BuildPlanSheets, CdSheet, type BuildChoices } from "./BuildPlan";
+import { BeesPanel, DEFAULT_BEES, type BeeState, type BeeTab } from "./BeesPanel";
 import { BuildStudio } from "./BuildStudio";
 import { DEFAULT_GOALS, GoalsStep, type Goals } from "./GoalsStep";
 import { sizeGarden } from "@/lib/sizing";
@@ -123,6 +124,12 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
   const [view, setView] = useState<ToolView | null>(null);
   const [build, setBuild] = useState<BuildChoices>({ bed: "better", fence: "better", drip: true });
   const [sheets, setSheets] = useState(false);
+  const [beesOpen, setBeesOpen] = useState(false);
+  const [beeTab, setBeeTab] = useState<BeeTab>("flowers");
+  const [bees, setBees] = useState<BeeState>(DEFAULT_BEES);
+  const [beeSheet, setBeeSheet] = useState(false);
+  const buildC = useMemo<BuildChoices>(() => ({ ...build, hives: bees.hives }), [build, bees.hives]);
+  useEffect(() => { if (beesOpen) track("tool_opened", "bees:" + beeTab); }, [beesOpen, beeTab]);
   const session = useSession();
   const [cloud, setCloud] = useState<SiteProfile[]>([]);
   useEffect(() => { if (session) listAccountPlans().then(setCloud).catch(() => {}); else setCloud([]); }, [session]);
@@ -189,6 +196,11 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
     if (mode === "pin") {
       setProfileId(uid());
       choosePlace({ label: `Dropped pin, ${p[1].toFixed(5)}, ${p[0].toFixed(5)}`, lat: p[1], lon: p[0] });
+      return;
+    }
+    if (mode === "hive") {
+      setBees((b) => ({ ...b, hive: p }));
+      setMode("idle");
       return;
     }
     if (mode === "bedpoint") {
@@ -451,6 +463,36 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
     });
   }, [have, myBeds, mySuns, fit, bedSuns, plan, step, editBed]);
 
+  // ---------- bees: hive spot on the map, and its sun ----------
+  const hiveRing = useMemo(() => (bees.hive ? rectAt(bees.hive, 6, 1.83) : null), [bees.hive]);
+  const hiveSpots = useMemo(() => (bees.hive && hiveRing ? [{ id: "hive", ring: hiveRing, center: [bees.hive[0], bees.hive[1] + 3 / 110574] as LngLat, label: "Hive stand" }] : []), [bees.hive, hiveRing]);
+  const hiveRings = useMemo(() => {
+    if (!bees.hive) return [];
+    const [lon, lat] = bees.hive;
+    return [25, 50].map((ft) => {
+      const r = ft * 0.3048, kx = 111320 * Math.cos((lat * Math.PI) / 180);
+      const ring: LngLat[] = Array.from({ length: 48 }, (_, i) => { const a = (i / 48) * 2 * Math.PI; return [lon + (r * Math.sin(a)) / kx, lat + (r * Math.cos(a)) / 110574]; });
+      return { ring, label: `${ft} ft`, at: [lon, lat + r / 110574] as LngLat };
+    });
+  }, [bees.hive]);
+  const hivePrep = useMemo(() => {
+    if (!beesOpen || !bees.hive || grid.state !== "done") return null;
+    const g = grid.data;
+    return prepare({ grid: { cols: g.cols, rows: g.rows, bounds: g.bounds, cell: g.cell, surface: g.surface, ground: g.ground, kind: g.kind }, objects });
+  }, [beesOpen, bees.hive, grid, objects]);
+  const hiveSun = useMemo(() => {
+    if (!bees.hive || !hiveRing || grid.state !== "done" || !sun) return null;
+    const avg = bedSun({ ring: hiveRing, center: bees.hive }, sun.hours, grid.data);
+    const split = hivePrep ? pointSunSplit(hivePrep, grid.data.bounds, bees.hive, season, YEAR) : null;
+    return { avg, am: split?.am ?? null, pm: split?.pm ?? null, season: SEASON_SHORT[season].toLowerCase() };
+  }, [bees.hive, hiveRing, grid, sun, hivePrep, season]);
+  const flyToHive = () => {
+    const c = bees.hive ?? (garden ? ringCenter(garden) : place ? [place.lon, place.lat] as LngLat : null);
+    if (!c) return;
+    const phone = window.innerWidth <= 760;
+    setFlyTo({ center: c, zoom: 19.5, key: Date.now(), padLeft: phone ? 0 : 560, padBottom: phone ? Math.round(window.innerHeight * 0.56) : 0 });
+  };
+
   // ---------- saving ----------
   const buildProfile = (): SiteProfile | null =>
     place && {
@@ -458,7 +500,8 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
       name: profileName.trim() || place.label.split(",")[0],
       savedAt: new Date().toISOString(),
       place, garden, objects, imagery,
-      beds: bedOpts, picks, build, goals,
+      beds: bedOpts, picks, build: buildC, goals,
+      bees: bees.hives || bees.plants.length || bees.hive ? bees : undefined,
       road: road ?? undefined,
       // Record this year's plan in each bed's history, so next year's rotation fills in by itself.
       myBeds: have ? myBeds.map((b) => {
@@ -501,6 +544,7 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
     setPicks(p.picks ?? []);
     setGoals({ ...DEFAULT_GOALS, ...(p.goals ?? {}) });
     if (p.build) setBuild(p.build as BuildChoices);
+    setBees({ ...DEFAULT_BEES, ...(p.bees ?? {}) });
     choosePlace(p.place, { garden: p.garden, objects: p.objects ?? [] });
     const r: Road | null = p.road ?? (p.garden ? "new" : null);
     setRoad(r);
@@ -524,7 +568,7 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
   const hasBeds = myBeds.length > 0;
   const reachedNew = [true, !!garden, !!garden, !!garden, !!garden, !!garden, !!garden, true, !!place];
   const reachedOf = (i: number) => have ? ({ 0: true, 9: !!place, 10: hasBeds, 4: hasBeds, 5: hasBeds, 7: true, 8: !!place } as Record<number, boolean>)[i] ?? false : reachedNew[i] ?? false;
-  const show = (i: number) => { setView(null); setEditBed(null); setStep(i); setMode("idle"); setEditing(false); panelRef.current?.scrollTo({ top: 0 }); };
+  const show = (i: number) => { setBeesOpen(false); setView(null); setEditBed(null); setStep(i); setMode("idle"); setEditing(false); panelRef.current?.scrollTo({ top: 0 }); };
   const go = (i: number) => { if (reachedOf(i)) show(i); };
   const nextStep = steps[pos + 1];
   const nextOk = nextStep != null && reachedOf(nextStep);
@@ -561,8 +605,9 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
             ))}
           </ol>
         </nav>
-        <span className="step-mobile">{view ? TOOL_LABEL[view] : `Step ${pos + 1} of ${steps.length} · ${LABEL[step]}`}</span>
-        <Feedback step={view ?? LABEL[step]} />
+        <button className={`tools-btn bees-btn${beesOpen ? " on" : ""}`} aria-pressed={beesOpen} onClick={() => { setBeesOpen((o) => !o); setView(null); setCollapsed(false); if (mode === "hive") setMode("idle"); panelRef.current?.scrollTo({ top: 0 }); }}>Bees</button>
+        <span className="step-mobile">{beesOpen ? "Bees" : view ? TOOL_LABEL[view] : `Step ${pos + 1} of ${steps.length} · ${LABEL[step]}`}</span>
+        <Feedback step={beesOpen ? "Bees" : view ?? LABEL[step]} />
       </header>
 
       <main className="mapwrap">
@@ -583,7 +628,8 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
           square={square}
           editRing={editing && step <= 1 ? garden : step === 9 && editBed ? myBeds.find((b) => b.id === editBed)?.ring ?? null : null}
           editRigid={step === 9 && !!editBed}
-          spots={mapSpots}
+          spots={beesOpen ? hiveSpots : mapSpots}
+          rings={beesOpen ? hiveRings : undefined}
           onEditRing={(r) => {
             if (step === 9 && editBed) { setMyBeds((all) => all.map((b) => (b.id === editBed ? { ...b, ring: r, center: ringCenter(r) } : b))); return; }
             setGarden(r); setSunBySeason({});
@@ -609,7 +655,7 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
         )}
         {drawing && (
           <div className="map-ui top-center hint">
-            {mode === "pin" ? "Tap your yard" : mode === "tree" ? "Tap the centre of the tree" : mode === "bedpoint" ? "Tap the middle of the bed"
+            {mode === "pin" ? "Tap your yard" : mode === "hive" ? "Tap where the hive stand would go" : mode === "tree" ? "Tap the centre of the tree" : mode === "bedpoint" ? "Tap the middle of the bed"
               : rectMode ? [mode === "bed" ? "Tap one corner of the bed" : "Tap one corner of the garden", "Tap the next corner along the same side", "Tap the opposite side to set the depth"][Math.min(draftCount, 2)]
               : draftCount < 3 ? "Tap each corner" : "Tap the first point or press Finish to close the shape"}
           </div>
@@ -631,11 +677,21 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
         {toast && <div className="toast" role="status">{toast}</div>}
       </main>
 
-      <aside className={`panel glass${view || step === 7 ? " wide" : ""}${collapsed ? " collapsed" : ""}`} ref={panelRef}>
+      <aside className={`panel glass${beesOpen || view || step === 7 ? " wide" : ""}${collapsed ? " collapsed" : ""}`} ref={panelRef}>
         <button className="sheet-handle" aria-expanded={!collapsed} aria-label={collapsed ? "Show the panel" : "Hide the panel to see more map"} onClick={() => setCollapsed((c) => !c)}>
           <span aria-hidden /> {collapsed ? "Show" : "Hide"}
         </button>
-        {view ? (
+        {beesOpen ? (
+          <>
+            <BeesPanel tab={beeTab} setTab={(t) => { setBeeTab(t); panelRef.current?.scrollTo({ top: 0 }); }} bees={bees} setBees={setBees} picks={picks} state={siteState}
+              wind={site.state === "done" ? site.data.wind?.prevailing ?? null : null} sun={hiveSun} sunBusy={sunBusy} hasPlace={!!place}
+              placing={mode === "hive"} onPlace={() => { setMode("hive"); flyToHive(); }} onCancelPlace={() => setMode("idle")} onSheet={() => setBeeSheet(true)} />
+            <div className="stepnav">
+              <button className="btn ghost" onClick={() => { setBeesOpen(false); if (mode === "hive") setMode("idle"); }}>← Back to step {pos + 1}: {LABEL[step]}</button>
+              <span />
+            </div>
+          </>
+        ) : view ? (
           <>
             <p className="eyebrow">Grow tools · {TOOL_LABEL[view]}</p>
             {view === "timeline" && <Timeline picks={picks} frost={frost} state={siteState} onPick={() => go(garden ? 4 : 0)} />}
@@ -923,7 +979,7 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
           <PlantsStep onTimeline={() => { setGrowTab("timeline"); go(7); }} picks={picks} setPicks={setPicks} bestSun={plantBest} frost={frost} kind={kindFilter} setKind={setKindFilter} bedSuns={plantSuns} state={siteState} />
         )}
         {step === 5 && <LayoutStep plan={plan} picks={picks} onPick={() => go(4)} ends={have ? ["north", "south"] : fit?.ends ?? ["north", "south"]} lastYear={lastYearByBed} perennials={have ? myBeds.filter((b) => b.kind === "perennial").map((b) => b.n) : []} />}
-        {step === 6 && area && fit && <BuildStudio garden={area} trimmed={area !== garden} beds={fit.beds} choices={build} setChoices={setBuild} onOpen={() => setSheets(true)} />}
+        {step === 6 && area && fit && <BuildStudio garden={area} trimmed={area !== garden} beds={fit.beds} choices={buildC} setChoices={setBuild} onOpen={() => setSheets(true)} />}
 
         {step === 7 && (
           <>
@@ -996,14 +1052,30 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
       </aside>
       <nav className="tabbar" aria-label="Sections">
         {([[null, "Plan"], ["timeline", "Seed to harvest"], ["problems", "What's wrong?"], ["checklist", "Checklist"]] as [ToolView | null, string][]).map(([k, label]) => (
-          <button key={label} className={view === k ? "on" : ""} aria-current={view === k ? "page" : undefined} onClick={() => { setView(k); setCollapsed(false); panelRef.current?.scrollTo({ top: 0 }); }}>
+          <button key={label} className={!beesOpen && view === k ? "on" : ""} aria-current={!beesOpen && view === k ? "page" : undefined} onClick={() => { setBeesOpen(false); setView(k); setCollapsed(false); panelRef.current?.scrollTo({ top: 0 }); }}>
             <TabIcon k={k} />
             <span>{label}</span>
           </button>
         ))}
+        <button className={beesOpen ? "on" : ""} aria-current={beesOpen ? "page" : undefined} onClick={() => { setBeesOpen(true); setView(null); setCollapsed(false); panelRef.current?.scrollTo({ top: 0 }); }}>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 9c-2.8 0-5 2.5-5 6s2.2 6 5 6 5-2.5 5-6-2.2-6-5-6zM7.5 14h9M8 17.5h8M10 9.4C8 6 5 5 3.5 6.5S4 11 7.6 11.6M14 9.4C16 6 19 5 20.5 6.5S20 11 16.4 11.6" /></svg>
+          <span>Bees</span>
+        </button>
       </nav>
+      {beeSheet && (
+        <div className="sheets" role="dialog" aria-label="Hive stand sheet">
+          <div className="sheets-bar no-print">
+            <strong>Hive stand · {profileName.trim() || place?.label.split(",")[0] || "My garden"}</strong>
+            <span>
+              <button className="btn pill" onClick={() => window.print()}>Print or save as PDF</button>
+              <button className="btn" onClick={() => setBeeSheet(false)}>Close</button>
+            </span>
+          </div>
+          <CdSheet no="H-101" name={profileName.trim() || place?.label.split(",")[0] || "My garden"} index={[["H-101", "Hive stand, apiary"]]} />
+        </div>
+      )}
       {sheets && area && fit && (
-        <BuildPlanSheets name={profileName.trim() || place?.label.split(",")[0] || "My garden"} garden={area} beds={fit.beds} ends={fit.ends} plan={plan} trimmed={area !== garden} choices={build} onClose={() => setSheets(false)} />
+        <BuildPlanSheets name={profileName.trim() || place?.label.split(",")[0] || "My garden"} garden={area} beds={fit.beds} ends={fit.ends} plan={plan} trimmed={area !== garden} choices={buildC} onClose={() => setSheets(false)} />
       )}
     </div>
   );

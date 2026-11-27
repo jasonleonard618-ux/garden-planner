@@ -515,6 +515,7 @@ a.btn { text-decoration: none; display: inline-block; }
 
 /* sunnier spots on the sun step */
 .spot-label { background: #FF6F47; color: #2A0E05; font: 600 12px var(--sans); padding: 3px 8px; border-radius: 999px; white-space: nowrap; pointer-events: none; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3); }
+.ring-label { background: rgba(11, 53, 48, 0.85); color: #FFD7C4; font: 500 11px var(--sans); padding: 2px 7px; border-radius: 999px; white-space: nowrap; pointer-events: none; }
 .spots ul { list-style: none; margin: 6px 0; padding: 0; display: grid; gap: 6px; }
 .spots li { display: grid; grid-template-columns: 28px 1fr auto; gap: 10px; align-items: center; background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px; }
 .spot-id { width: 26px; height: 26px; border-radius: 50%; background: var(--coral); color: #2A0E05; display: grid; place-items: center; font-weight: 700; font-size: 13px; }
@@ -581,7 +582,7 @@ a.btn { text-decoration: none; display: inline-block; }
 /* Phone tab bar: the plan and the grow tools one tap away (storyboard R8 phone screens). */
 .tabbar { display: none; }
 @media (max-width: 760px) {
-  .tabbar { display: grid; grid-template-columns: repeat(4, 1fr); position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; height: calc(62px + env(safe-area-inset-bottom)); padding: 6px 6px env(safe-area-inset-bottom); background: rgba(8, 36, 32, 0.96); border-top: 1px solid rgba(255, 255, 255, 0.12); }
+  .tabbar { display: grid; grid-template-columns: repeat(5, 1fr); position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; height: calc(62px + env(safe-area-inset-bottom)); padding: 6px 6px env(safe-area-inset-bottom); background: rgba(8, 36, 32, 0.96); border-top: 1px solid rgba(255, 255, 255, 0.12); }
   .tabbar button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border: 0; background: none; color: #D6E5E0; font: 500 11px var(--sans); cursor: pointer; }
   .tabbar button.on { color: var(--coral); }
   .panel { bottom: calc(62px + env(safe-area-inset-bottom)); max-height: calc(56dvh - 30px); }
@@ -786,3 +787,47 @@ a.btn { text-decoration: none; display: inline-block; }
 @media (max-width: 760px) { .road-options { grid-template-columns: 1fr; } .road-card { min-height: 0; } .mybeds li { grid-template-columns: 24px minmax(0, 1fr) 58px auto; } .mybeds .bed-h { display: none; } }
 .vertex-handle.rotate { border-color: var(--teal); background: #FFD2C2; cursor: alias; }
 .bed-acts { display: inline-flex; gap: 10px; }
+
+/* ---------- Bees tab ---------- */
+.bees-btn { margin-left: 8px; }
+.bee-tabs { flex-shrink: 0; margin: 4px 0 14px; overflow-x: auto; scrollbar-width: none; }
+.bee-tabs .tab { flex: 1 0 auto; padding: 7px 10px; white-space: nowrap; }
+.bee-h { font-family: var(--serif); font-weight: 400; font-size: 22px; color: var(--teal); margin: 20px 0 6px; }
+.bee-list { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 14px; }
+.bee-list b { color: var(--teal); }
+.bloom { display: grid; gap: 2px; background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 8px 10px; }
+.bloom-row { display: grid; grid-template-columns: 170px 1fr; align-items: center; gap: 8px; min-height: 24px; border-radius: 8px; }
+.bloom-row.on { background: rgba(255, 111, 71, 0.08); }
+.bloom-head { min-height: 18px; }
+.bloom-track { position: relative; height: 18px; display: flex; }
+.bloom-head .bloom-track { height: 16px; }
+.bloom-month { flex: 1; font-family: var(--mono); font-size: 10.5px; color: var(--muted); border-left: 1px solid var(--line); padding-left: 3px; line-height: 16px; }
+.bloom-name { display: flex; align-items: center; gap: 6px; border: 0; background: none; text-align: left; font-size: 13px; padding: 2px 4px; cursor: pointer; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bloom-row.on .bloom-name { font-weight: 600; color: var(--coral-ink); }
+.bloom-box { flex: none; width: 15px; height: 15px; border: 1.5px solid rgba(11, 53, 48, 0.4); border-radius: 4px; font-size: 11px; line-height: 12px; text-align: center; color: #fff; }
+.bloom-row.on .bloom-box { background: var(--coral); border-color: var(--coral); }
+.bloom-bar { position: absolute; top: 4px; bottom: 4px; border-radius: 6px; background: rgba(11, 53, 48, 0.18); }
+.bloom-row.on .bloom-bar { background: var(--amber); }
+.bloom-count { border-top: 1px solid var(--line); padding-top: 4px; margin-top: 2px; }
+.bloom-n { position: absolute; top: 0; width: 6.25%; text-align: center; font-family: var(--mono); font-size: 11px; line-height: 18px; color: var(--muted); }
+.bloom-n.low { color: var(--coral-ink); font-weight: 600; }
+.bloom-n.ok { background: var(--mint-soft); color: var(--teal); font-weight: 600; border-radius: 4px; }
+.bee-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin: 6px 0 10px; }
+.bee-card { background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 12px 14px; }
+.bee-card h3 { text-transform: none; letter-spacing: normal; font-family: var(--serif); font-weight: 400; font-size: 24px; margin: 0 0 4px; color: var(--teal); }
+.bee-card ul { margin: 0; padding-left: 16px; font-size: 13.5px; display: grid; gap: 4px; }
+.bee-inputs { display: flex; gap: 10px; flex-wrap: wrap; margin: 12px 0 4px; }
+.bee-inputs label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+.bee-inputs input { width: 150px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+.bee-gear td.num { text-align: right; width: 48px; font-weight: 600; vertical-align: top; }
+.bee-cal { margin-top: 6px; }
+.bee-cal .tl-head, .bee-cal .tl-row { grid-template-columns: 250px 1fr; }
+.bee-task .tl-name { cursor: default; }
+.bee-bar { position: absolute; top: 6px; bottom: 6px; border-radius: 6px; background: var(--teal-2); opacity: 0.75; }
+.bee-bar.law { background: var(--coral); opacity: 1; }
+.bee-cal-list { margin-top: 10px; }
+@media (max-width: 760px) {
+  .bloom-row { grid-template-columns: 128px 1fr; }
+  .bee-cal .tl-head, .bee-cal .tl-row { grid-template-columns: 120px 1fr; }
+  .bees-btn { display: none; }
+}

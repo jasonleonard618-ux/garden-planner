@@ -44,7 +44,7 @@ function squareUp(pts: LngLat[], p: LngLat): LngLat {
   return f.from([Math.cos(snapped) * len, Math.sin(snapped) * len]);
 }
 
-export type DrawMode = "idle" | "garden" | "bed" | "structure" | "clear" | "tree" | "pin" | "bedpoint";
+export type DrawMode = "idle" | "garden" | "bed" | "structure" | "clear" | "tree" | "pin" | "bedpoint" | "hive";
 
 type Props = {
   flyTo: { center: LngLat; zoom: number; key: number; padLeft?: number; padBottom?: number } | null;
@@ -67,6 +67,8 @@ type Props = {
   editRing?: LngLat[] | null;
   /** Suggested sunnier spots: dashed outlines with a letter. */
   spots?: { id: string; ring: LngLat[]; center: LngLat; label: string }[];
+  /** Distance rings (outline only), e.g. 25 and 50 ft around a hive. */
+  rings?: { ring: LngLat[]; label: string; at: LngLat }[];
   onEditRing?: (ring: LngLat[]) => void;
   /** Keep the edited outline's shape: corner handles turn it about its centre instead of reshaping it (beds). */
   editRigid?: boolean;
@@ -125,7 +127,7 @@ export default function MapView(props: Props) {
     m.on("load", () => {
       m.addSource("shade", { type: "image", url: transparentPng, coordinates: [[0, 0.001], [0.001, 0.001], [0.001, 0], [0, 0]] });
       m.addLayer({ id: "shade", type: "raster", source: "shade", paint: { "raster-opacity": 0.72, "raster-fade-duration": 0, "raster-resampling": "nearest" }, layout: { visibility: "none" } });
-      for (const id of ["garden", "objects", "draft", "beds", "spots"]) m.addSource(id, { type: "geojson", data: EMPTY });
+      for (const id of ["garden", "objects", "draft", "beds", "spots", "rings"]) m.addSource(id, { type: "geojson", data: EMPTY });
       m.addLayer({ id: "garden-fill", type: "fill", source: "garden", paint: { "fill-color": "#9fd18b", "fill-opacity": 0.18 } });
       m.addLayer({ id: "garden-line", type: "line", source: "garden", paint: { "line-color": "#f4f9ef", "line-width": 3 } });
       m.addLayer({ id: "garden-line-inner", type: "line", source: "garden", paint: { "line-color": "#3f7a3a", "line-width": 1.5, "line-dasharray": [2, 1.5] } });
@@ -142,6 +144,7 @@ export default function MapView(props: Props) {
       });
       m.addLayer({ id: "spots-fill", type: "fill", source: "spots", paint: { "fill-color": "#FF6F47", "fill-opacity": 0.12 } });
       m.addLayer({ id: "spots-line", type: "line", source: "spots", paint: { "line-color": "#FF6F47", "line-width": 2.5, "line-dasharray": [2, 1.5] } });
+      m.addLayer({ id: "rings-line", type: "line", source: "rings", paint: { "line-color": "#FFD7C4", "line-width": 1.6, "line-dasharray": [1, 2] } });
       m.addLayer({ id: "beds-fill", type: "fill", source: "beds", paint: { "fill-color": ["match", ["get", "tone"], "low", "#FF6F47", "#BFE3D0"], "fill-opacity": 0.55 } });
       m.addLayer({ id: "beds-line", type: "line", source: "beds", paint: { "line-color": "#0B3530", "line-width": 1.6 } });
       m.addLayer({ id: "draft-line", type: "line", source: "draft", filter: ["==", "$type", "LineString"], paint: { "line-color": "#ffe27a", "line-width": 2.5 } });
@@ -153,7 +156,7 @@ export default function MapView(props: Props) {
     m.on("click", (e) => {
       const p = latest.current;
       const ll: LngLat = [e.lngLat.lng, e.lngLat.lat];
-      if (p.mode === "tree" || p.mode === "pin" || p.mode === "bedpoint") return p.onPoint(ll);
+      if (p.mode === "tree" || p.mode === "pin" || p.mode === "bedpoint" || p.mode === "hive") return p.onPoint(ll);
       if (p.mode === "idle") return;
       const pts = draft.current;
       if (p.shape === "rect" && (p.mode === "garden" || p.mode === "bed")) {
@@ -169,13 +172,13 @@ export default function MapView(props: Props) {
       renderDraft();
     });
     m.on("dblclick", (e) => {
-      if (latest.current.mode !== "idle" && latest.current.mode !== "tree" && latest.current.mode !== "pin" && latest.current.mode !== "bedpoint") {
+      if (latest.current.mode !== "idle" && latest.current.mode !== "tree" && latest.current.mode !== "pin" && latest.current.mode !== "bedpoint" && latest.current.mode !== "hive") {
         e.preventDefault();
         finish();
       }
     });
     m.on("mousemove", (e) => {
-      if (latest.current.mode === "idle" || latest.current.mode === "tree" || latest.current.mode === "pin" || latest.current.mode === "bedpoint" || !draft.current.length) return;
+      if (latest.current.mode === "idle" || latest.current.mode === "tree" || latest.current.mode === "pin" || latest.current.mode === "bedpoint" || latest.current.mode === "hive" || !draft.current.length) return;
       const p = latest.current, ll: LngLat = [e.lngLat.lng, e.lngLat.lat], pts = draft.current;
       if (p.shape === "rect" && (p.mode === "garden" || p.mode === "bed") && pts.length === 2) return renderDraft(undefined, rectFrom(pts[0], pts[1], ll));
       renderDraft(p.square && p.shape !== "rect" ? squareUp(pts, ll) : ll);
@@ -224,6 +227,7 @@ export default function MapView(props: Props) {
     syncOverlay();
     syncBeds();
     syncSpots();
+    syncRings();
   }
 
   const spotMarkers = useRef<maplibregl.Marker[]>([]);
@@ -242,6 +246,25 @@ export default function MapView(props: Props) {
       div.className = "spot-label";
       div.textContent = s.label;
       spotMarkers.current.push(new maplibregl.Marker({ element: div }).setLngLat(s.center).addTo(m));
+    }
+  }
+
+  const ringMarkers = useRef<maplibregl.Marker[]>([]);
+  function syncRings() {
+    const m = map.current;
+    if (!m || !ready.current) return;
+    ringMarkers.current.forEach((mk) => mk.remove());
+    ringMarkers.current = [];
+    const rings = props.rings ?? [];
+    (m.getSource("rings") as GeoJSONSource).setData({
+      type: "FeatureCollection",
+      features: rings.map((r) => ({ type: "Feature" as const, properties: {}, geometry: { type: "LineString" as const, coordinates: closeRing(r.ring) } })),
+    });
+    for (const r of rings) {
+      const div = document.createElement("div");
+      div.className = "ring-label";
+      div.textContent = r.label;
+      ringMarkers.current.push(new maplibregl.Marker({ element: div }).setLngLat(r.at).addTo(m));
     }
   }
 
@@ -319,7 +342,8 @@ export default function MapView(props: Props) {
   useEffect(syncObjects, [props.objects]);  
   useEffect(syncOverlay, [props.overlay, props.overlayVisible]);
   useEffect(syncBeds, [props.beds]);
-  useEffect(syncSpots, [props.spots]);  
+  useEffect(syncSpots, [props.spots]);
+  useEffect(syncRings, [props.rings]);  
 
   useEffect(() => {
     const m = map.current;
