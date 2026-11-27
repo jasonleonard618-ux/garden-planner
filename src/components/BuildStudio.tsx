@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import type { Bed } from "@/lib/beds";
 import type { LngLat } from "@/lib/types";
 import {
-  BED_TIERS, FENCE_TIERS, MATS, PATHS, WATERS, bedLinesFor, matOf, dripLines, fenceLines, pathLines, soakerLines, total,
+  BED_TIERS, FENCE_TIERS, MATS, PATHS, WATERS, bedLinesFor, hiveStandLines, matOf, dripLines, fenceLines, pathLines, soakerLines, total,
   type BedMat, type Line, type PathKind, type Tier, type Water,
 } from "@/lib/build";
 import { SRC } from "@/data/sources";
@@ -352,6 +352,7 @@ function Stage({ tab, setTab, b, beds, garden, choices, set, water, fenceView, s
             const price = k === "drip" ? total(dripLines(n, 60, !!MATS[mat].own)) : k === "soaker" ? total(soakerLines(n)) : 0;
             return <OptCard key={k} kind={`water-${k}`} on={water === k} title={WATERS[k].name} price={k === "drip" ? `≈ ${usd(price)}` : usd(price)} sub={WATERS[k].sub} tag={WATERS[k].tag} onClick={() => set({ drip: k === "drip", water: k })} />;
           })}
+          <OptCard kind="hive" on={!!choices.hives} title="Hive stand" price={choices.hives ? usd(total(hiveStandLines())) : "Not added"} sub="Sheet H-101: holds one or two beehives." tag={choices.hives ? "In your build plan" : "Optional, from the Bees tab"} onClick={() => set({ hives: choices.hives ? 0 : 1 })} />
           <OptCard kind="fence" on={false} title="Critter fence" price={ft && b.fl ? usd(total(fenceLines(b.fl, ft))) : "None"} sub="Good to excellent: rabbits to deer." tag="See fence plans" onClick={() => setTab("fence")} />
         </div>
         <p className="muted small">Prices are rough national figures for budgeting (practical choice), not quotes.</p>

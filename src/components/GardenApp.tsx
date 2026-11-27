@@ -128,7 +128,9 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
   const [beeTab, setBeeTab] = useState<BeeTab>("flowers");
   const [bees, setBees] = useState<BeeState>(DEFAULT_BEES);
   const [beeSheet, setBeeSheet] = useState(false);
-  const buildC = useMemo<BuildChoices>(() => ({ ...build, hives: bees.hives }), [build, bees.hives]);
+  // The hive stand joins the build plan only when the person asks for it (Bees tab or Build step).
+  const buildC = useMemo<BuildChoices>(() => ({ ...build, hives: bees.stand ? bees.hives || 1 : 0 }), [build, bees.stand, bees.hives]);
+  const setBuildC = (c: BuildChoices) => { setBuild(c); if (!!c.hives !== !!bees.stand) setBees((b) => ({ ...b, stand: !!c.hives })); };
   useEffect(() => { if (beesOpen) track("tool_opened", "bees:" + beeTab); }, [beesOpen, beeTab]);
   const session = useSession();
   const [cloud, setCloud] = useState<SiteProfile[]>([]);
@@ -501,7 +503,7 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
       savedAt: new Date().toISOString(),
       place, garden, objects, imagery,
       beds: bedOpts, picks, build: buildC, goals,
-      bees: bees.hives || bees.plants.length || bees.hive ? bees : undefined,
+      bees: bees.hives || bees.stand || bees.plants.length || bees.hive ? bees : undefined,
       road: road ?? undefined,
       // Record this year's plan in each bed's history, so next year's rotation fills in by itself.
       myBeds: have ? myBeds.map((b) => {
@@ -685,7 +687,7 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
           <>
             <BeesPanel tab={beeTab} setTab={(t) => { setBeeTab(t); panelRef.current?.scrollTo({ top: 0 }); }} bees={bees} setBees={setBees} picks={picks} state={siteState}
               wind={site.state === "done" ? site.data.wind?.prevailing ?? null : null} sun={hiveSun} sunBusy={sunBusy} hasPlace={!!place}
-              placing={mode === "hive"} onPlace={() => { setMode("hive"); flyToHive(); }} onCancelPlace={() => setMode("idle")} onSheet={() => setBeeSheet(true)} />
+              placing={mode === "hive"} onPlace={() => { setMode("hive"); flyToHive(); }} onCancelPlace={() => setMode("idle")} onSheet={() => setBeeSheet(true)} hasBuild={!!(area && fit)} />
             <div className="stepnav">
               <button className="btn ghost" onClick={() => { setBeesOpen(false); if (mode === "hive") setMode("idle"); }}>← Back to step {pos + 1}: {LABEL[step]}</button>
               <span />
@@ -713,7 +715,7 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
                 ? road === "new" ? "Trace the area you want to plant. Tap each corner on the map." : have ? "Next you'll trace the beds you already grow in." : "We're pulling up the sun and soil for this spot while you answer."
                 : "Type your address. We'll pull up a photo of your yard from above and measure the sun it gets."}
             </p>
-            <AddressSearch initial={initialQuery} onPick={(p) => { setProfileId(uid()); setRoad(null); setMyBeds([]); choosePlace(p); }} onDropPin={() => setMode("pin")} />
+            <AddressSearch initial={place ? undefined : initialQuery} onPick={(p) => { setProfileId(uid()); setRoad(null); setMyBeds([]); choosePlace(p); }} onDropPin={() => setMode("pin")} />
             {mode === "pin" && <div className="draw-help"><p>Tap your yard on the map. Zoom in first if you need to.</p><button className="btn ghost" onClick={() => setMode("idle")}>Cancel</button></div>}
             {place && <p className="muted small place">{place.label}</p>}
             {place && !garden && !road && mode !== "pin" && <RoadQuestion onPick={pickRoad} />}
@@ -979,7 +981,7 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
           <PlantsStep onTimeline={() => { setGrowTab("timeline"); go(7); }} picks={picks} setPicks={setPicks} bestSun={plantBest} frost={frost} kind={kindFilter} setKind={setKindFilter} bedSuns={plantSuns} state={siteState} />
         )}
         {step === 5 && <LayoutStep plan={plan} picks={picks} onPick={() => go(4)} ends={have ? ["north", "south"] : fit?.ends ?? ["north", "south"]} lastYear={lastYearByBed} perennials={have ? myBeds.filter((b) => b.kind === "perennial").map((b) => b.n) : []} />}
-        {step === 6 && area && fit && <BuildStudio garden={area} trimmed={area !== garden} beds={fit.beds} choices={buildC} setChoices={setBuild} onOpen={() => setSheets(true)} />}
+        {step === 6 && area && fit && <BuildStudio garden={area} trimmed={area !== garden} beds={fit.beds} choices={buildC} setChoices={setBuildC} onOpen={() => setSheets(true)} />}
 
         {step === 7 && (
           <>

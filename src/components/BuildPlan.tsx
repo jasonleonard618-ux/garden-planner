@@ -34,7 +34,7 @@ export function useBuild(garden: LngLat[] | null, beds: Bed[], c: BuildChoices) 
     if (fl && c.fence !== "none") groups.push({ title: `Fence, ${FENCE_TIERS[c.fence].name}`, lines: fenceLines(fl, c.fence) });
     if (c.drip) groups.push({ title: "Drip watering", lines: dripLines(beds.length, Math.ceil(lengthFt + 25), !!MATS[mat].own) });
     else if (c.water === "soaker") groups.push({ title: "Soaker hoses", lines: soakerLines(beds.length) });
-    if (c.hives) groups.push({ title: `Hive stand for ${c.hives === 1 ? "one hive" : "two hives"}`, lines: hiveStandLines() });
+    if (c.hives) groups.push({ title: "Hive stand, holds one or two hives", lines: hiveStandLines() });
     return { m, fl, groups, pathSq, sum: groups.reduce((s, g) => s + total(g.lines), 0) };
   }, [garden, beds, c]);
 }
