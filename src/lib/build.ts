@@ -103,16 +103,18 @@ export function fenceLines(f: FenceLayout, tier: Tier): Line[] {
 
 // ---------- drip ----------
 
-export function dripLines(beds: number, mainFt: number): Line[] {
+/** tanks: stock tank beds get 2 emitter runs per tank, 2 tanks per bed (sheet B-104), each fed over its own rim. */
+export function dripLines(beds: number, mainFt: number, tanks = false): Line[] {
+  const feeds = tanks ? beds * 2 : beds, runs = tanks ? 4 : 3;
   return [
     { item: "Backflow preventer (hose thread)", qty: 1, unit: "", price: 12 },
     { item: "Battery hose timer", qty: 1, unit: "", price: 40 },
     { item: "Pressure regulator, 25 psi", qty: 1, unit: "", price: 12 },
     { item: "Inline filter, 150 mesh", qty: 1, unit: "", price: 10 },
     { item: "½ in mainline tubing", qty: Math.ceil(mainFt / 50), unit: "rolls of 50 ft", price: 18 },
-    { item: "Tee and ½ in riser per bed", qty: beds, unit: "sets", price: 4 },
-    { item: "Emitter tubing, 12 in spacing", qty: Math.ceil((beds * 3 * 8) / 50), unit: "rolls of 50 ft", price: 22, note: "Three 8 ft lines per bed." },
-    { item: "Fittings, end caps and stakes", qty: beds, unit: "bed kits", price: 6 },
+    { item: tanks ? "Tee and ½ in riser per tank, up over the rim" : "Tee and ½ in riser per bed", qty: feeds, unit: "sets", price: 4 },
+    { item: "Emitter tubing, 12 in spacing", qty: Math.ceil((beds * runs * 8) / 50), unit: "rolls of 50 ft", price: 22, note: tanks ? "Two 8 ft runs per tank, four per bed." : "Three 8 ft lines per bed." },
+    { item: "Fittings, end caps and stakes", qty: feeds, unit: tanks ? "tank kits" : "bed kits", price: 6 },
   ];
 }
 

@@ -280,8 +280,8 @@ export function BuildStudio({ garden, beds, trimmed, choices, setChoices, onOpen
               <h3>Steps</h3>
               <ol className="build-steps">
                 <li>Before the path mulch goes down, lay the ½ in mainline from the spigot down the middle path.</li>
-                <li>At each bed, add a tee and bring a riser up at the path end, before you fill the soil.</li>
-                <li>Run three lines of 12 in emitter tubing the length of each bed, pin them down and cap the ends.</li>
+                <li>{MATS[mat].own ? "At each stock tank, add a tee and bring a riser up and over the rim at the path end." : "At each bed, add a tee and bring a riser up at the path end, before you fill the soil."}</li>
+                <li>{MATS[mat].own ? "Run two lines of 12 in emitter tubing the length of each tank, pin them down and cap the ends." : "Run three lines of 12 in emitter tubing the length of each bed, pin them down and cap the ends."}</li>
                 <li>At the spigot, connect in order: backflow preventer, timer, 25 psi regulator, filter. Flush once, then cap.</li>
                 <li>Mulch over the lines. Start with about 30 minutes every other day and adjust to your soil and weather (practical starting point).</li>
               </ol>
@@ -349,7 +349,7 @@ function Stage({ tab, setTab, b, beds, garden, choices, set, water, fenceView, s
         <h3>Water and critters</h3>
         <div className="opt-grid">
           {(Object.keys(WATERS) as Water[]).map((k) => {
-            const price = k === "drip" ? total(dripLines(n, 60)) : k === "soaker" ? total(soakerLines(n)) : 0;
+            const price = k === "drip" ? total(dripLines(n, 60, !!MATS[mat].own)) : k === "soaker" ? total(soakerLines(n)) : 0;
             return <OptCard key={k} kind={`water-${k}`} on={water === k} title={WATERS[k].name} price={k === "drip" ? `≈ ${usd(price)}` : usd(price)} sub={WATERS[k].sub} tag={WATERS[k].tag} onClick={() => set({ drip: k === "drip", water: k })} />;
           })}
           <OptCard kind="fence" on={false} title="Critter fence" price={ft && b.fl ? usd(total(fenceLines(b.fl, ft))) : "None"} sub="Good to excellent: rabbits to deer." tag="See fence plans" onClick={() => setTab("fence")} />
@@ -384,7 +384,7 @@ function Stage({ tab, setTab, b, beds, garden, choices, set, water, fenceView, s
               <p className="eyebrow">Fence layout · post spacing</p>
               <h2 className="paper-h">Post spacing, worked out</h2>
               <p className="small">Each side is split into equal bays no wider than {FENCE_TIERS[ft].maxBayFt} ft{ft === "excellent" ? ", so each cedar frame comes from one 8 ft board" : ""}, with a 4 ft gate on the south-most side.</p>
-              <PlanSvg garden={garden} beds={beds} fl={b.fl} kind="fence" />
+              <PlanSvg garden={garden} beds={beds} fl={b.fl} kind="fence" tanks={!!MATS[mat].own} />
             </div>
           )}
         </div>
@@ -416,7 +416,7 @@ function Stage({ tab, setTab, b, beds, garden, choices, set, water, fenceView, s
         <div className="layout-draw">
           <p className="eyebrow">Drip layout · plan view, north up</p>
           <h2 className="paper-h">Where the water lines go</h2>
-          <PlanSvg garden={garden} beds={beds} fl={null} kind="drip" />
+          <PlanSvg garden={garden} beds={beds} fl={null} kind="drip" tanks={!!MATS[mat].own} />
           <p className="eyebrow chain-h">At the spigot, in this order</p>
           <ol className="chain">{["Spigot", "Backflow preventer", "Timer", "Regulator, 25 psi", "Filter", "½ in mainline"].map((s) => <li key={s}>{s}</li>)}</ol>
         </div>

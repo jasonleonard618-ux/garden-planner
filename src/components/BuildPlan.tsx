@@ -32,7 +32,7 @@ export function useBuild(garden: LngLat[] | null, beds: Bed[], c: BuildChoices) 
     const pl = pathLines(c.path ?? "chips", pathSq);
     if (pl.length) groups.push({ title: `Paths, ${PATHS[c.path ?? "chips"].name.toLowerCase()}`, lines: pl });
     if (fl && c.fence !== "none") groups.push({ title: `Fence, ${FENCE_TIERS[c.fence].name}`, lines: fenceLines(fl, c.fence) });
-    if (c.drip) groups.push({ title: "Drip watering", lines: dripLines(beds.length, Math.ceil(lengthFt + 25)) });
+    if (c.drip) groups.push({ title: "Drip watering", lines: dripLines(beds.length, Math.ceil(lengthFt + 25), !!MATS[mat].own) });
     else if (c.water === "soaker") groups.push({ title: "Soaker hoses", lines: soakerLines(beds.length) });
     return { m, fl, groups, pathSq, sum: groups.reduce((s, g) => s + total(g.lines), 0) };
   }, [garden, beds, c]);
@@ -176,7 +176,7 @@ function useLocal(garden: LngLat[]) {
   return (p: LngLat): [number, number] => [(p[0] - lon0) * kx, (p[1] - lat0) * ky];
 }
 
-export function PlanSvg({ garden, beds, fl, kind, plan, ends }: { garden: LngLat[]; beds: Bed[]; fl: ReturnType<typeof fenceLayout> | null; kind: "site" | "fence" | "drip"; plan?: Plan; ends?: [string, string] }) {
+export function PlanSvg({ garden, beds, fl, kind, plan, ends, tanks }: { garden: LngLat[]; beds: Bed[]; fl: ReturnType<typeof fenceLayout> | null; kind: "site" | "fence" | "drip"; plan?: Plan; ends?: [string, string]; tanks?: boolean }) {
   const toFt = useLocal(garden);
   const ring = garden.map(toFt);
   const xs = ring.map((p) => p[0]), ys = ring.map((p) => p[1]);
@@ -204,9 +204,17 @@ export function PlanSvg({ garden, beds, fl, kind, plan, ends }: { garden: LngLat
         const r = bd.ring.map(toFt).map(P);
         return (
           <g key={bd.id}>
-            <path d={r.map((p, j) => `${j ? "L" : "M"}${p.join(" ")}`).join(" ") + "Z"} fill={kind === "site" ? "#E4D6BC" : "#F4F4F2"} stroke="#10221F" strokeWidth={kind === "site" ? 1.3 : 1} />
-            {kind === "site" ? <PlantedBed r={r} s={s} bed={plan?.beds.find((pb) => pb.n === bd.n)} ends={ends ?? ["north", "south"]} n={bd.n} /> : kind !== "drip" && <text x={(r[0][0] + r[2][0]) / 2} y={(r[0][1] + r[2][1]) / 2 + 4} textAnchor="middle" className="sv-t">{bd.n}</text>}
-            {kind === "drip" && [0.2, 0.5, 0.8].map((f) => {
+            {tanks
+              ? tankOvals(r, 0).map((o, j) => <path key={j} d={pathOf(o)} fill={kind === "site" ? "#D3D8D5" : "#F4F4F2"} stroke="#10221F" strokeWidth={kind === "site" ? 1.3 : 1} />)
+              : <path d={r.map((p, j) => `${j ? "L" : "M"}${p.join(" ")}`).join(" ") + "Z"} fill={kind === "site" ? "#E4D6BC" : "#F4F4F2"} stroke="#10221F" strokeWidth={kind === "site" ? 1.3 : 1} />}
+            {kind === "site" ? <PlantedBed r={r} s={s} bed={plan?.beds.find((pb) => pb.n === bd.n)} ends={ends ?? ["north", "south"]} n={bd.n} tanks={tanks} /> : kind !== "drip" && <text x={(r[0][0] + r[2][0]) / 2} y={(r[0][1] + r[2][1]) / 2 + 4} textAnchor="middle" className="sv-t">{bd.n}</text>}
+            {kind === "drip" && tanks && [1 / 6, 1 / 3, 2 / 3, 5 / 6].map((b) => {
+              // two emitter runs per tank, along its length (sheet B-104)
+              const at = bedFrame(r);
+              const [p, q] = [at(0.08, b), at(0.92, b)];
+              return <line key={b} x1={p[0]} y1={p[1]} x2={q[0]} y2={q[1]} stroke="#145049" strokeWidth="1.4" strokeDasharray="1 2.5" strokeLinecap="round" />;
+            })}
+            {kind === "drip" && !tanks && [0.2, 0.5, 0.8].map((f) => {
               // three emitter lines along the bed's long side, inset a little from each end
               const a = [r[0][0] + (r[1][0] - r[0][0]) * f, r[0][1] + (r[1][1] - r[0][1]) * f];
               const b = [r[3][0] + (r[2][0] - r[3][0]) * f, r[3][1] + (r[2][1] - r[3][1]) * f];
@@ -248,7 +256,29 @@ export function PlanSvg({ garden, beds, fl, kind, plan, ends }: { garden: LngLat
 
 type PV = [number, number];
 /** A bed in plan: cedar frame, soil, and each half planted at its crop's spacing, with a number tag off the first end. */
-function PlantedBed({ r, s, bed, ends, n }: { r: PV[]; s: number; bed?: Plan["beds"][number]; ends: [string, string]; n: number }) {
+/** Maps (a, b) in a bed's own units (a along the long side, b across, both 0..1) to drawing px. */
+function bedFrame(r: PV[]) {
+  const d = (p: PV, q: PV) => Math.hypot(q[0] - p[0], q[1] - p[1]);
+  const longFirst = d(r[0], r[1]) >= d(r[1], r[2]);
+  const o = r[0], e1: PV = longFirst ? [r[1][0] - o[0], r[1][1] - o[1]] : [r[3][0] - o[0], r[3][1] - o[1]];
+  const e2: PV = longFirst ? [r[3][0] - o[0], r[3][1] - o[1]] : [r[1][0] - o[0], r[1][1] - o[1]];
+  return (a: number, b: number): PV => [o[0] + e1[0] * a + e2[0] * b, o[1] + e1[1] * a + e2[1] * b];
+}
+const pathOf = (pts: PV[]) => pts.map((p, j) => `${j ? "L" : "M"}${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(" ") + "Z";
+
+/** Two 2 x 8 ft round-end stock tanks side by side in one 4 x 8 ft bed space, inset by `inIn` inches (rim). */
+function tankOvals(r: PV[], inIn: number): PV[][] {
+  const at = bedFrame(r);
+  const L = 96, W = 48, R = 12 - inIn;
+  return [0, 24].map((y0) => {
+    const pts: PV[] = [], cy = y0 + 12;
+    for (let i = 0; i <= 12; i++) { const t = -Math.PI / 2 + (Math.PI * i) / 12; pts.push(at((L - 12 + R * Math.cos(t)) / L, (cy + R * Math.sin(t)) / W)); }
+    for (let i = 0; i <= 12; i++) { const t = Math.PI / 2 + (Math.PI * i) / 12; pts.push(at((12 + R * Math.cos(t)) / L, (cy + R * Math.sin(t)) / W)); }
+    return pts;
+  });
+}
+
+function PlantedBed({ r, s, bed, ends, n, tanks }: { r: PV[]; s: number; bed?: Plan["beds"][number]; ends: [string, string]; n: number; tanks?: boolean }) {
   // corners as origin + a*e1 + b*e2; e1 runs along the long side
   const d = (p: PV, q: PV) => Math.hypot(q[0] - p[0], q[1] - p[1]);
   const longFirst = d(r[0], r[1]) >= d(r[1], r[2]);
@@ -282,9 +312,9 @@ function PlantedBed({ r, s, bed, ends, n }: { r: PV[]; s: number; bed?: Plan["be
   const tagC = at(firstIsA ? -off : 1 + off, 0.5);
   return (
     <>
-      <path d={ePath(inner)} fill="url(#pl-soil)" stroke="#10221F" strokeWidth="0.6" />
+      {tanks ? tankOvals(r, 1.25).map((o, j) => <path key={j} d={pathOf(o)} fill="url(#pl-soil)" stroke="#10221F" strokeWidth="0.6" />) : <path d={ePath(inner)} fill="url(#pl-soil)" stroke="#10221F" strokeWidth="0.6" />}
       <line x1={at(0.5, fb)[0]} y1={at(0.5, fb)[1]} x2={at(0.5, 1 - fb)[0]} y2={at(0.5, 1 - fb)[1]} stroke="#F4E9D6" strokeOpacity="0.55" strokeWidth="0.8" strokeDasharray="3 2" />
-      <clipPath id={`bedclip-${n}`}><path d={ePath(inner)} /></clipPath>
+      <clipPath id={`bedclip-${n}`}>{tanks ? tankOvals(r, 1.25).map((o, j) => <path key={j} d={pathOf(o)} />) : <path d={ePath(inner)} />}</clipPath>
       <g clipPath={`url(#bedclip-${n})`}>{plants.map((p) => <Plant key={p.k} id={p.id} cx={p.x} cy={p.y} R={p.R} seed={p.k} faded={p.faded} />)}</g>
       <circle cx={tagC[0]} cy={tagC[1]} r={tagR} fill="#fff" stroke="#10221F" strokeWidth="1" />
       <text x={tagC[0]} y={tagC[1] + 3.5} textAnchor="middle" className="sv-t">{n}</text>
@@ -391,7 +421,7 @@ export function BuildPlanSheets({ name, garden, beds, ends, plan, choices, onClo
       <section className="sheet" id="sheet-A-101">
         <h2>Site and planting plan</h2>
         <div className="sheet-split planting">
-          <PlanSvg garden={garden} beds={beds} fl={b.fl} kind="site" plan={plan} ends={ends} />
+          <PlanSvg garden={garden} beds={beds} fl={b.fl} kind="site" plan={plan} ends={ends} tanks={!!MATS[mat].own} />
           <div className="plan-side">
           <h3 className="plan-h">Plant list</h3>
           <PlantList plan={plan} />
@@ -407,14 +437,14 @@ export function BuildPlanSheets({ name, garden, beds, ends, plan, choices, onClo
           {plan.beds.some((pb) => !pb.north.crop && !pb.south.crop) && <p className="muted small">Beds not listed are open for now.</p>}
           </div>
         </div>
-        <p className="sheet-note">{beds.length} beds, 4 × 8 ft, long sides {ends[0] === "north" ? "roughly north to south" : "roughly east to west"}, {trimmed ? "with a 1½ ft walking edge inside the dashed line, which is the fenced garden" : "kept 1½ ft in from the outline"}.{b.fl ? " Squares are fence posts." : ""} Plants are drawn at Extension spacing; crops planted closer than 6 in show as a fill, not one symbol per plant. Paler plants get less sun than they like.</p>
+        <p className="sheet-note">{beds.length} beds, 4 × 8 ft{MATS[mat].own ? ", each two 2 × 8 ft stock tanks side by side" : ""}, long sides {ends[0] === "north" ? "roughly north to south" : "roughly east to west"}, {trimmed ? "with a 1½ ft walking edge inside the dashed line, which is the fenced garden" : "kept 1½ ft in from the outline"}.{b.fl ? " Squares are fence posts." : ""} Plants are drawn at Extension spacing; crops planted closer than 6 in show as a fill, not one symbol per plant. Paler plants get less sun than they like.</p>
         <TitleBlock no="A-101" title="Site plan" name={name} />
       </section>
       {MATS[mat].drawn && <CdSheet no={bedSheet} name={name} index={index} />}
       {fence && (
         <section className="sheet" id="sheet-F-100">
           <h2>Fence layout, {FENCE_TIERS[choices.fence as Tier].name.toLowerCase()}</h2>
-          <PlanSvg garden={garden} beds={beds} fl={b.fl} kind="fence" />
+          <PlanSvg garden={garden} beds={beds} fl={b.fl} kind="fence" tanks={!!MATS[mat].own} />
           <p className="sheet-note">{b.fl!.posts} posts. Each side is split into equal bays no wider than {FENCE_TIERS[choices.fence as Tier].maxBayFt} ft, measured center to center (O.C.). {FENCE_TIERS[choices.fence as Tier].summary} Source: <a href={SRC.ugaFence.href}>{SRC.ugaFence.label}</a>{FENCE_TIERS[choices.fence as Tier].src === "practical" ? " for heights; the cattle-panel build is a practical choice" : ""}.</p>
           <p className="sheet-note"><b>Call 811 before digging post holes.</b> Check fence height and permit rules with your town or HOA, and set concrete footings below your local frost line.</p>
           <TitleBlock no="F-100" title="Fence layout" name={name} />
@@ -425,8 +455,8 @@ export function BuildPlanSheets({ name, garden, beds, ends, plan, choices, onClo
       {choices.drip && (
         <section className="sheet" id="sheet-D-101">
           <h2>Drip watering</h2>
-          <PlanSvg garden={garden} beds={beds} fl={null} kind="drip" />
-          <p className="sheet-note">A ½ in mainline (orange) runs down the middle path with a tee and riser to each bed and three lines of 12 in emitter tubing per bed (dotted). Assembly at the spigot, in order: backflow preventer, timer, 25 psi regulator, filter. Source: <a href={SRC.clemsonDrip.href}>{SRC.clemsonDrip.label}</a>. Start with about 30 minutes every other day and adjust to your soil and weather (practical starting point).</p>
+          <PlanSvg garden={garden} beds={beds} fl={null} kind="drip" tanks={!!MATS[mat].own} />
+          <p className="sheet-note">A ½ in mainline (orange) runs down the middle path with a tee and riser to {MATS[mat].own ? "each stock tank, brought up over the rim, and two runs of 12 in emitter tubing per tank" : "each bed and three lines of 12 in emitter tubing per bed"} (dotted). Assembly at the spigot, in order: backflow preventer, timer, 25 psi regulator, filter. Source: <a href={SRC.clemsonDrip.href}>{SRC.clemsonDrip.label}</a>. Start with about 30 minutes every other day and adjust to your soil and weather (practical starting point).</p>
           <TitleBlock no="D-101" title="Drip plan" name={name} />
         </section>
       )}
