@@ -13,6 +13,7 @@ const STEPS = [
 ] as const;
 
 export default function Home({ skipIntro }: { skipIntro?: boolean }) {
+  const [pastHero, setPastHero] = useState(false);
   const [phase, setPhase] = useState<"intro" | "leaving" | "done">(skipIntro ? "done" : "intro");
 
   useEffect(() => {
@@ -27,21 +28,22 @@ export default function Home({ skipIntro }: { skipIntro?: boolean }) {
 
   // Sections fade and rise into place as they scroll into view; the hero photo drifts slower than the page.
   useEffect(() => {
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      document.querySelectorAll(".home [data-reveal]").forEach((el) => el.classList.add("in"));
-      return;
-    }
-    const io = new IntersectionObserver((entries) => {
-      for (const e of entries) if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); }
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduce) document.querySelectorAll(".home [data-reveal]").forEach((el) => el.classList.add("in"));
+    const io = reduce ? null : new IntersectionObserver((entries) => {
+      for (const e of entries) if (e.isIntersecting) { e.target.classList.add("in"); io?.unobserve(e.target); }
     }, { threshold: 0.18, rootMargin: "0px 0px -6% 0px" });
-    document.querySelectorAll(".home [data-reveal]").forEach((el) => io.observe(el));
+    if (io) document.querySelectorAll(".home [data-reveal]").forEach((el) => io.observe(el));
     let raf = 0;
     const onScroll = () => {
       cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(() => document.documentElement.style.setProperty("--hero-shift", `${Math.min(window.scrollY, 900) * 0.3}px`));
+      raf = requestAnimationFrame(() => {
+        document.documentElement.style.setProperty("--hero-shift", `${Math.min(window.scrollY, 900) * 0.3}px`);
+        setPastHero(window.scrollY > window.innerHeight * 0.6);
+      });
     };
     window.addEventListener("scroll", onScroll, { passive: true });
-    return () => { io.disconnect(); window.removeEventListener("scroll", onScroll); cancelAnimationFrame(raf); };
+    return () => { io?.disconnect(); window.removeEventListener("scroll", onScroll); cancelAnimationFrame(raf); };
   }, []);
 
   return (
@@ -53,7 +55,8 @@ export default function Home({ skipIntro }: { skipIntro?: boolean }) {
         </div>
       )}
 
-      <header className="home-nav">
+      {/* At the top the hero carries the full logo, so the bar holds just the links; the wordmark slides in once the hero scrolls away. */}
+      <header className={`home-nav${pastHero ? " past" : ""}`}>
         <Link href="/" className="brand" aria-label="Light & Loam home"><Wordmark size={30} /></Link>
         <nav>
           <a href="#how">How it works</a>
