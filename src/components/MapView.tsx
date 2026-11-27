@@ -68,6 +68,8 @@ type Props = {
   /** Suggested sunnier spots: dashed outlines with a letter. */
   spots?: { id: string; ring: LngLat[]; center: LngLat; label: string }[];
   onEditRing?: (ring: LngLat[]) => void;
+  /** Keep the edited outline's shape: corner handles turn it about its centre instead of reshaping it (beds). */
+  editRigid?: boolean;
   onDraftChange: (n: number) => void;
   beds?: { n: number; ring: LngLat[]; center: LngLat; label: string; tone: "ok" | "low" | "walk" }[];
 };
@@ -337,6 +339,7 @@ export default function MapView(props: Props) {
     editMarkers.current.forEach((mk) => mk.remove());
     editMarkers.current = [];
     const ring = props.editRing;
+    if (m && !ring && ready.current) syncGarden(); // put the garden layer back after editing a bed
     if (!m || !ring) return;
     let cur = [...ring];
     const show = (r: LngLat[]) => {
@@ -344,18 +347,34 @@ export default function MapView(props: Props) {
       (m.getSource("garden") as GeoJSONSource).setData({ type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: [closeRing(r)] } });
     };
     const centroid = (r: LngLat[]): LngLat => [r.reduce((a, p) => a + p[0], 0) / r.length, r.reduce((a, p) => a + p[1], 0) / r.length];
+    if (props.editRigid) show(cur); // a bed being edited is drawn in the outline layer while its handles are up
     const corners = cur.map((pt, i) => {
       const div = document.createElement("div");
-      div.className = "vertex-handle";
+      div.className = latest.current.editRigid ? "vertex-handle rotate" : "vertex-handle";
+      if (latest.current.editRigid) div.title = "Drag to turn the bed";
       div.setAttribute("aria-label", `Corner ${i + 1}`);
       const mk = new maplibregl.Marker({ element: div, draggable: true }).setLngLat(pt).addTo(m);
-      mk.on("drag", () => { const ll = mk.getLngLat(); cur[i] = [ll.lng, ll.lat]; show(cur); mover.setLngLat(centroid(cur)); });
-      mk.on("dragend", () => latest.current.onEditRing?.([...cur]));
+      let rotBase: LngLat[] = cur;
+      mk.on("dragstart", () => { rotBase = [...cur]; });
+      mk.on("drag", () => {
+        const ll = mk.getLngLat();
+        if (latest.current.editRigid) {
+          // Turn the whole shape about its centre so the dragged corner follows the pointer (in local metres, so nothing skews).
+          const c = centroid(rotBase), kx = Math.cos((c[1] * Math.PI) / 180);
+          const a0 = Math.atan2(rotBase[i][1] - c[1], (rotBase[i][0] - c[0]) * kx);
+          const a1 = Math.atan2(ll.lat - c[1], (ll.lng - c[0]) * kx);
+          const d = a1 - a0, cs = Math.cos(d), sn = Math.sin(d);
+          cur = rotBase.map(([x, y]) => { const lx = (x - c[0]) * kx, ly = y - c[1]; return [c[0] + (lx * cs - ly * sn) / kx, c[1] + lx * sn + ly * cs] as LngLat; });
+          cur.forEach((pt, j) => { if (j !== i) corners[j].setLngLat(pt); });
+        } else cur[i] = [ll.lng, ll.lat];
+        show(cur); mover.setLngLat(centroid(cur));
+      });
+      mk.on("dragend", () => { mk.setLngLat(cur[i]); latest.current.onEditRing?.([...cur]); });
       return mk;
     });
     const mdiv = document.createElement("div");
     mdiv.className = "move-handle";
-    mdiv.title = "Drag to move the whole outline";
+    mdiv.title = latest.current.editRigid ? "Drag to move the bed" : "Drag to move the whole outline";
     mdiv.textContent = "✥";
     const mover = new maplibregl.Marker({ element: mdiv, draggable: true }).setLngLat(centroid(cur)).addTo(m);
     let start: LngLat = centroid(cur), base = cur;
@@ -369,7 +388,7 @@ export default function MapView(props: Props) {
     mover.on("dragend", () => latest.current.onEditRing?.([...cur]));
     editMarkers.current = [...corners, mover];
     return () => { editMarkers.current.forEach((mk) => mk.remove()); editMarkers.current = []; };
-  }, [props.editRing]);
+  }, [props.editRing]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const m = map.current, f = props.flyTo;

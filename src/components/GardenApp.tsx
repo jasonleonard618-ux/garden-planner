@@ -115,6 +115,7 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
   const [myBeds, setMyBeds] = useState<MyBed[]>([]);
   const [bedKind, setBedKind] = useState<BedKind>("raised");
   const [bedSize, setBedSize] = useState({ w: 4, l: 8 });
+  const [editBed, setEditBed] = useState<string | null>(null);
   const [bedOpts, setBedOpts] = useState<BedOptions>(DEFAULT_BEDS);
   const [picks, setPicks] = useState<string[]>([]);
   const [goals, setGoals] = useState<Goals>(DEFAULT_GOALS);
@@ -433,11 +434,12 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
   const mapBeds = useMemo(() => {
     if (have) {
       if (![9, 10, 4, 5].includes(step)) return [];
-      return myBeds.map((b, i) => {
+      return myBeds.flatMap((b, i) => {
+        if (step === 9 && b.id === editBed) return [];
         const h = mySuns?.[i];
         const sq = plan.beds.find((x) => x.n === b.n);
         const low = h != null && (step === 5 && sq ? sq.north.lowSun || sq.south.lowSun : b.kind !== "perennial" && h < 6);
-        return { n: b.n, ring: b.ring, center: b.center, label: `${b.n}`, tone: (b.kind === "perennial" ? "walk" : low ? "low" : "ok") as "ok" | "low" | "walk" };
+        return [{ n: b.n, ring: b.ring, center: b.center, label: `${b.n}`, tone: (b.kind === "perennial" ? "walk" : low ? "low" : "ok") as "ok" | "low" | "walk" }];
       });
     }
     if (!fit || step < 2 || step > 6) return [];
@@ -447,7 +449,7 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
       const low = h != null && (step >= 5 && sq ? sq.north.lowSun || sq.south.lowSun : h < 6);
       return { n: b.n, ring: b.ring, center: b.center, label: `${b.n}`, tone: (low ? "low" : "ok") as "ok" | "low" };
     });
-  }, [have, myBeds, mySuns, fit, bedSuns, plan, step]);
+  }, [have, myBeds, mySuns, fit, bedSuns, plan, step, editBed]);
 
   // ---------- saving ----------
   const buildProfile = (): SiteProfile | null =>
@@ -522,7 +524,7 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
   const hasBeds = myBeds.length > 0;
   const reachedNew = [true, !!garden, !!garden, !!garden, !!garden, !!garden, !!garden, true, !!place];
   const reachedOf = (i: number) => have ? ({ 0: true, 9: !!place, 10: hasBeds, 4: hasBeds, 5: hasBeds, 7: true, 8: !!place } as Record<number, boolean>)[i] ?? false : reachedNew[i] ?? false;
-  const show = (i: number) => { setView(null); setStep(i); setMode("idle"); setEditing(false); panelRef.current?.scrollTo({ top: 0 }); };
+  const show = (i: number) => { setView(null); setEditBed(null); setStep(i); setMode("idle"); setEditing(false); panelRef.current?.scrollTo({ top: 0 }); };
   const go = (i: number) => { if (reachedOf(i)) show(i); };
   const nextStep = steps[pos + 1];
   const nextOk = nextStep != null && reachedOf(nextStep);
@@ -579,9 +581,13 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
           onDraftChange={setDraftCount}
           shape={shape}
           square={square}
-          editRing={editing && step <= 1 ? garden : null}
+          editRing={editing && step <= 1 ? garden : step === 9 && editBed ? myBeds.find((b) => b.id === editBed)?.ring ?? null : null}
+          editRigid={step === 9 && !!editBed}
           spots={mapSpots}
-          onEditRing={(r) => { setGarden(r); setSunBySeason({}); }}
+          onEditRing={(r) => {
+            if (step === 9 && editBed) { setMyBeds((all) => all.map((b) => (b.id === editBed ? { ...b, ring: r, center: ringCenter(r) } : b))); return; }
+            setGarden(r); setSunBySeason({});
+          }}
           beds={mapBeds}
           showSides={step < 1 || (step === 1 && !mapSpots.length)}
         />
@@ -904,6 +910,12 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
             drawing={mode === "bed" || mode === "bedpoint" ? mode : null}
             onDraw={() => { setShape("rect"); setMode("bed"); }} onPlace={() => setMode("bedpoint")} onCancel={() => setMode("idle")}
             onSwitch={() => { setRoad("new"); show(0); }} gridMissing={grid.state === "done" && !grid.data.fromLidar}
+            editing={editBed} setEditing={(id) => {
+              setMode("idle"); setEditBed(id);
+              // Zoom in on the bed so its handles have room.
+              const b = myBeds.find((x) => x.id === id);
+              if (b) { const phone = window.innerWidth <= 760; setFlyTo({ center: b.center, zoom: 21, key: Date.now(), padLeft: phone ? 0 : 440, padBottom: phone ? Math.round(window.innerHeight * 0.56) : 0 }); }
+            }}
           />
         )}
         {step === 10 && <LastYearStep beds={myBeds} setBeds={setMyBeds} year={YEAR} />}

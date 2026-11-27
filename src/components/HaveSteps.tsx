@@ -32,6 +32,13 @@ export function rectAt(c: LngLat, widthFt: number, lengthFt: number): LngLat[] {
   return [[c[0] - dx, c[1] - dy], [c[0] + dx, c[1] - dy], [c[0] + dx, c[1] + dy], [c[0] - dx, c[1] + dy]];
 }
 
+/** Turn a bed about its centre by deg (counter-clockwise), measured in local metres so it keeps its shape. */
+export function rotateRing(ring: LngLat[], deg: number): LngLat[] {
+  const c: LngLat = [ring.reduce((a, p) => a + p[0], 0) / ring.length, ring.reduce((a, p) => a + p[1], 0) / ring.length];
+  const kx = Math.cos((c[1] * Math.PI) / 180), t = (deg * Math.PI) / 180, cs = Math.cos(t), sn = Math.sin(t);
+  return ring.map(([x, y]) => { const lx = (x - c[0]) * kx, ly = y - c[1]; return [c[0] + (lx * cs - ly * sn) / kx, c[1] + lx * sn + ly * cs] as LngLat; });
+}
+
 export function RoadQuestion({ onPick }: { onPick: (r: "new" | "have") => void }) {
   return (
     <section className="road" aria-labelledby="road-q">
@@ -51,13 +58,16 @@ export function RoadQuestion({ onPick }: { onPick: (r: "new" | "have") => void }
   );
 }
 
-export function YourBedsStep({ beds, setBeds, suns, sunBusy, season, kind, setKind, size, setSize, drawing, onDraw, onPlace, onCancel, onSwitch, gridMissing }: {
+export function YourBedsStep({ beds, setBeds, suns, sunBusy, season, kind, setKind, size, setSize, drawing, onDraw, onPlace, onCancel, onSwitch, gridMissing, editing, setEditing }: {
+  editing: string | null; setEditing: (id: string | null) => void;
   beds: MyBed[]; setBeds: (b: MyBed[]) => void; suns: (number | null)[] | null; sunBusy: boolean; season: string;
   kind: BedKind; setKind: (k: BedKind) => void; size: { w: number; l: number }; setSize: (s: { w: number; l: number }) => void;
   drawing: "bed" | "bedpoint" | null; onDraw: () => void; onPlace: () => void; onCancel: () => void; onSwitch: () => void; gridMissing: boolean;
 }) {
   const total = beds.reduce((a, b) => a + bedSize(b.ring).areaSqFt, 0);
   const renumber = (list: MyBed[]) => list.map((b, i) => ({ ...b, n: i + 1 }));
+  const turn = (id: string, deg: number) => setBeds(beds.map((x) => (x.id === id ? { ...x, ring: rotateRing(x.ring, deg) } : x)));
+  const editBed = beds.find((b) => b.id === editing);
   return (
     <>
       <h1 className="title">Trace the beds you have</h1>
@@ -69,7 +79,17 @@ export function YourBedsStep({ beds, setBeds, suns, sunBusy, season, kind, setKi
         ))}
       </div>
       <p className="muted small">{KIND_HELP[kind]}</p>
-      {drawing ? (
+      {editBed ? (
+        <div className="draw-help">
+          <p><b>Bed {editBed.n}:</b> drag ✥ on the map to move it, or drag a corner to turn it.</p>
+          <div className="row">
+            <button className="btn" onClick={() => turn(editBed.id, 15)}>↺ 15°</button>
+            <button className="btn" onClick={() => turn(editBed.id, -15)}>↻ 15°</button>
+            <button className="btn" onClick={() => turn(editBed.id, 90)}>Turn 90°</button>
+            <button className="btn primary" onClick={() => setEditing(null)}>Done</button>
+          </div>
+        </div>
+      ) : drawing ? (
         <div className="draw-help">
           <p>{drawing === "bed" ? "Tap two corners along one side of the bed, then tap the opposite side." : `Tap the middle of the bed on the map. It goes in as ${size.w} × ${size.l} ft, long side north–south.`}</p>
           <button className="btn ghost" onClick={onCancel}>Cancel</button>
@@ -100,7 +120,10 @@ export function YourBedsStep({ beds, setBeds, suns, sunBusy, season, kind, setKi
                   </select>
                   <span className="small">{bedSize(b.ring).label}</span>
                   <span className="bed-h">{h == null ? "–" : `${fmt(h, 1)} hrs`}</span>
-                  <button className="link" aria-label={`Remove bed ${b.n}`} onClick={() => setBeds(renumber(beds.filter((x) => x.id !== b.id)))}>Remove</button>
+                  <span className="bed-acts">
+                    <button className="link" aria-label={`Move or turn bed ${b.n}`} onClick={() => setEditing(editing === b.id ? null : b.id)}>{editing === b.id ? "Done" : "Move"}</button>
+                    <button className="link" aria-label={`Remove bed ${b.n}`} onClick={() => { if (editing === b.id) setEditing(null); setBeds(renumber(beds.filter((x) => x.id !== b.id))); }}>Remove</button>
+                  </span>
                 </li>
               );
             })}
