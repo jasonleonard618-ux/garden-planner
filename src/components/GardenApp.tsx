@@ -797,6 +797,14 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
         </div>
         </>)}
       </aside>
+      <nav className="tabbar" aria-label="Sections">
+        {([[null, "Plan"], ["timeline", "Seed to harvest"], ["problems", "What's wrong?"], ["checklist", "Checklist"]] as [ToolView | null, string][]).map(([k, label]) => (
+          <button key={label} className={view === k ? "on" : ""} aria-current={view === k ? "page" : undefined} onClick={() => { setView(k); setMenu(false); setCollapsed(false); panelRef.current?.scrollTo({ top: 0 }); }}>
+            <TabIcon k={k} />
+            <span>{label}</span>
+          </button>
+        ))}
+      </nav>
       {sheets && area && fit && (
         <BuildPlanSheets name={profileName.trim() || place?.label.split(",")[0] || "My garden"} garden={area} beds={fit.beds} ends={fit.ends} plan={plan} trimmed={area !== garden} choices={build} onClose={() => setSheets(false)} />
       )}
@@ -805,6 +813,15 @@ export default function GardenApp({ initialQuery }: { initialQuery?: string }) {
 }
 
 // ---------- small pieces ----------
+
+/** Line icons for the phone tab bar, in the storyboard's style. */
+function TabIcon({ k }: { k: ToolView | null }) {
+  const d = k === null ? "M12 21s-7-6.2-7-11a7 7 0 0114 0c0 4.8-7 11-7 11zM12 7.5a2.5 2.5 0 100 5 2.5 2.5 0 000-5z"
+    : k === "timeline" ? "M12 21v-9M12 12c0-4 3-6 7-6 0 4-3 6-7 6zM12 15c0-3-2.5-5-6-5 0 3 2.5 5 6 5z"
+    : k === "problems" ? "M10.5 18a7.5 7.5 0 110-15 7.5 7.5 0 010 15zM16 16l5 5M10.5 7v4M10.5 14h.01"
+    : "M9 6h11M9 12h11M9 18h11M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2";
+  return <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={d} /></svg>;
+}
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (

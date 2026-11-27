@@ -566,3 +566,13 @@ a.btn { text-decoration: none; display: inline-block; }
 .reco-bar i { display: block; height: 100%; border-radius: 4px; background: var(--coral, #FF6F47); }
 .reco-pick { align-items: center; gap: 14px; }
 .size-table td, .size-table th { font-size: 12.5px; }
+/* Phone tab bar: the plan and the grow tools one tap away (storyboard R8 phone screens). */
+.tabbar { display: none; }
+@media (max-width: 760px) {
+  .tabbar { display: grid; grid-template-columns: repeat(4, 1fr); position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; height: calc(62px + env(safe-area-inset-bottom)); padding: 6px 6px env(safe-area-inset-bottom); background: rgba(8, 36, 32, 0.96); border-top: 1px solid rgba(255, 255, 255, 0.12); }
+  .tabbar button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border: 0; background: none; color: #D6E5E0; font: 500 11px var(--sans); cursor: pointer; }
+  .tabbar button.on { color: var(--coral); }
+  .panel { bottom: calc(62px + env(safe-area-inset-bottom)); max-height: calc(56dvh - 30px); }
+  .tools-menu { display: none; }
+  .maplibregl-ctrl-bottom-right, .maplibregl-ctrl-bottom-left { bottom: calc(62px + env(safe-area-inset-bottom)) !important; }
+}
