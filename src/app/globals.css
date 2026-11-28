@@ -186,7 +186,6 @@ fieldset input, fieldset select { padding: 6px 8px; }
 .intro-skip { position: absolute; bottom: 28px; right: 28px; background: none; border: 1px solid rgba(255, 255, 255, 0.35); color: rgba(255, 255, 255, 0.85); border-radius: 999px; padding: 6px 14px; font-size: 13px; cursor: pointer; }
 .intro-logo .m-sun { transform-origin: 50px 54px; animation: sunrise 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
 .intro-logo .m-soil { transform-origin: 50px 54px; animation: soil 0.7s 0.15s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
-.intro-logo .m-rows { animation: fade 0.5s 0.6s both; }
 .intro-logo .m-stem { stroke-dasharray: 1; stroke-dashoffset: 1; animation: grow 0.6s 0.75s ease-out forwards; }
 .intro-logo .m-leaf-r { transform-origin: 50px 50px; animation: leaf 0.55s 1.15s cubic-bezier(0.3, 1.4, 0.5, 1) both; }
 .intro-logo .m-leaf-l { transform-origin: 50px 56px; animation: leaf 0.55s 1.3s cubic-bezier(0.3, 1.4, 0.5, 1) both; }
